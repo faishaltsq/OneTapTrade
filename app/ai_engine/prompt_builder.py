@@ -31,6 +31,10 @@ SMC (Smart Money Concepts) rules:
 - ORDER BLOCKS: supply blocks (bearish OB) act as resistance, demand blocks (bullish OB) act as support.
   - For BUY: place SL below the nearest demand block (or below recent swing low if no OB).
   - For SELL: place SL above the nearest supply block (or above recent swing high if no OB).
+- Prefer LIMIT entries at valid high-probability SMC zones when price can retrace.
+  - BUY_LIMIT should be inside a demand order block below current price.
+  - SELL_LIMIT should be inside a supply order block above current price.
+  - MARKET only when confidence is above 50% and setup is trend-following.
 - FAIR VALUE GAPS (FVG): price often returns to fill FVGs. Target TP at unfilled FVG or opposite liquidity.
 - LIQUIDITY LEVELS: equal highs/lows where stops cluster. Price hunts these levels.
   - Avoid placing SL exactly at liquidity levels (will get hunted).

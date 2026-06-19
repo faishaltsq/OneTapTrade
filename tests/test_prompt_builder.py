@@ -73,3 +73,15 @@ def test_system_prompt_uses_ema50_ema200_and_rsi_25_75_thresholds():
     assert "<25" in prompt
     assert ">70" not in prompt
     assert "<30" not in prompt
+
+
+def test_system_prompt_prefers_smc_limit_entries_and_restricts_market():
+    from app.ai_engine.prompt_builder import build_system_prompt
+
+    prompt = build_system_prompt()
+
+    assert "Prefer LIMIT entries" in prompt
+    assert "BUY_LIMIT" in prompt and "demand order block" in prompt
+    assert "SELL_LIMIT" in prompt and "supply order block" in prompt
+    assert "MARKET only when confidence is above 50%" in prompt
+    assert "trend-following" in prompt

@@ -103,10 +103,14 @@ def send_order(request: dict) -> Optional[dict]:
             logger.error("order_send returned None")
             return None
         retcode = result.retcode
-        if retcode != mt5.TRADE_RETCODE_DONE:
+        success_retcodes = {mt5.TRADE_RETCODE_DONE}
+        placed_retcode = getattr(mt5, "TRADE_RETCODE_PLACED", None)
+        if placed_retcode is not None:
+            success_retcodes.add(placed_retcode)
+        if retcode not in success_retcodes:
             logger.error(f"Order send failed. retcode={retcode}, comment={result.comment}")
         else:
-            logger.info(f"Order executed. ticket={result.order}")
+            logger.info(f"Order executed/placed. ticket={result.order}")
         return result._asdict()
     except Exception as e:
         logger.error(f"send_order exception: {e}")

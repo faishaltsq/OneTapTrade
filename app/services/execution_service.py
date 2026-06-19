@@ -37,6 +37,38 @@ def execute_trade(
     is_buy = decision_str == "BUY"
     digits = int(symbol_info.get("digits", 5)) if symbol_info else 5
 
+    if market_payload:
+        try:
+            from app.analysis.smc_entry_selector import (
+                can_use_market_fallback,
+                select_smc_limit_entry,
+            )
+
+            smc_entry = select_smc_limit_entry(
+                decision_str,
+                current_bid=current_bid,
+                current_ask=current_ask,
+                market_payload=market_payload,
+            )
+            if smc_entry.get("valid") and smc_entry.get("entry_type") == "LIMIT":
+                is_limit = True
+                preferred_entry = smc_entry.get("entry_price")
+                logger.info(
+                    f"SMC LIMIT selected: {smc_entry.get('order_type')} @ {preferred_entry} "
+                    f"zone={smc_entry.get('zone_type')} quality={smc_entry.get('quality')}"
+                )
+            elif not can_use_market_fallback(
+                decision_str,
+                float(getattr(ai_decision, "confidence", 0.0) or 0.0),
+                market_payload,
+            ):
+                return {
+                    "success": False,
+                    "error": f"No valid SMC LIMIT and MARKET fallback not allowed: {smc_entry.get('reason')}",
+                }
+        except Exception as e:
+            logger.debug(f"SMC entry selector skipped: {e}")
+
     def _normalize_price(value):
         return round(float(value), digits) if value is not None else None
 
@@ -237,7 +269,12 @@ def execute_trade(
     retcode_send = order_result.get("retcode", -1)
     import MetaTrader5 as mt5
 
-    if retcode_send != mt5.TRADE_RETCODE_DONE:
+    success_retcodes = {mt5.TRADE_RETCODE_DONE}
+    placed_retcode = getattr(mt5, "TRADE_RETCODE_PLACED", None)
+    if placed_retcode is not None:
+        success_retcodes.add(placed_retcode)
+
+    if retcode_send not in success_retcodes:
         comment = order_result.get("comment", "Unknown error")
         logger.error(f"Order send failed: retcode={retcode_send}, comment={comment}")
         return {
