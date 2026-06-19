@@ -1,0 +1,113 @@
+from pydantic import field_validator
+from pydantic_settings import BaseSettings
+from typing import Any, Optional
+
+
+class Settings(BaseSettings):
+    app_env: str = "development"
+    bot_mode: str = "SIGNAL_ONLY"
+    live_trading_enabled: bool = False
+
+    mt5_login: Optional[int] = None
+    mt5_password: Optional[str] = None
+    mt5_server: Optional[str] = None
+    mt5_path: Optional[str] = None
+
+    deepseek_api_key: Optional[str] = None
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-chat"
+
+    telegram_bot_token: Optional[str] = None
+    telegram_allowed_chat_id: Optional[str] = None
+
+    supabase_url: Optional[str] = None
+    supabase_service_role_key: Optional[str] = None
+
+    default_symbol: str = "XAUUSD"
+    default_symbols: str = ""
+    risk_profile: str = "MEDIUM"
+    risk_per_trade_percent: float = 0.5
+    max_daily_drawdown_percent: float = 2.0
+    max_open_positions: int = 1
+    min_confidence: float = 0.65
+    min_risk_reward: float = 1.5
+    max_spread_points: int = 35
+    trading_loop_interval_seconds: int = 300
+
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+    @field_validator("mt5_login", mode="before")
+    @classmethod
+    def coerce_mt5_login(cls, v: Any) -> Optional[int]:
+        if v is None or v == "":
+            return None
+        return int(v)
+
+    @property
+    def risk_profile_config(self) -> dict:
+        profiles = {
+            "LOW": {
+                "min_confidence": 0.65,
+                "min_risk_reward": 2.0,
+                "min_sl_pips": 30,
+                "max_sl_pips": 100,
+            },
+            "MEDIUM": {
+                "min_confidence": 0.55,
+                "min_risk_reward": 1.5,
+                "min_sl_pips": 30,
+                "max_sl_pips": 100,
+            },
+            "HIGH": {
+                "min_confidence": 0.40,
+                "min_risk_reward": 1.2,
+                "min_sl_pips": 15,
+                "max_sl_pips": 80,
+            },
+        }
+        return profiles.get(self.risk_profile, profiles["MEDIUM"])
+
+    @property
+    def symbols(self) -> list:
+        if self.default_symbols:
+            return [s.strip() for s in self.default_symbols.split(",") if s.strip()]
+        return [self.default_symbol]
+
+    @property
+    def is_live_allowed(self) -> bool:
+        return self.live_trading_enabled
+
+    @property
+    def is_signal_only(self) -> bool:
+        return self.bot_mode == "SIGNAL_ONLY"
+
+    @property
+    def is_semi_auto(self) -> bool:
+        return self.bot_mode == "SEMI_AUTO"
+
+    @property
+    def is_auto_demo(self) -> bool:
+        return self.bot_mode == "AUTO_DEMO"
+
+    @property
+    def is_live_auto(self) -> bool:
+        return self.bot_mode == "LIVE_AUTO"
+
+    @property
+    def effective_min_confidence(self) -> float:
+        return self.risk_profile_config["min_confidence"]
+
+    @property
+    def effective_min_risk_reward(self) -> float:
+        return self.risk_profile_config["min_risk_reward"]
+
+    @property
+    def effective_min_sl_pips(self) -> int:
+        return self.risk_profile_config["min_sl_pips"]
+
+    @property
+    def effective_max_sl_pips(self) -> int:
+        return self.risk_profile_config["max_sl_pips"]
+
+
+settings = Settings()
