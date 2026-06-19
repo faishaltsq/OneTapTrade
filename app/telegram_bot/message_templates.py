@@ -211,10 +211,58 @@ def _fmt_num(value) -> str:
         return _escape_html(str(value))
 
 
+def _fmt_alert_num(value) -> str:
+    if value is None:
+        return "Menunggu data"
+    return _fmt_num(value)
+
+
+def _display_trend(value: str | None) -> str:
+    if value is None or value == "":
+        return "Menunggu data"
+    text = str(value).upper()
+    if text in {"UNCLEAR", "UNKNOWN", "NONE"}:
+        return "Belum ada bias jelas"
+    return text.title()
+
+
+def _display_regime(value: str | None) -> str:
+    if value is None or value == "":
+        return "Menunggu data"
+    text = str(value).upper()
+    if text in {"UNCLEAR", "UNKNOWN", "NONE"}:
+        return "Belum ada bias jelas"
+    return text.replace("_", " ").title()
+
+
+def _display_rsi_state(value: str | None) -> str:
+    labels = {
+        "OVERSOLD": "Oversold",
+        "NORMAL": "Normal",
+        "OVERBOUGHT": "Overbought",
+        "MENUNGGU_DATA": "Menunggu data",
+    }
+    if value is None or value == "":
+        return "Menunggu data"
+    return labels.get(str(value).upper(), _display_trend(str(value)))
+
+
 def _section_trend(payload: dict, key: str) -> str:
     section = (payload or {}).get(key, {})
     ms = section.get("market_structure", {}) if isinstance(section, dict) else {}
-    return _escape_html(ms.get("trend") or ms.get("bias") or "N/A")
+    raw_trend = ms.get("trend") or ms.get("bias")
+    if raw_trend and str(raw_trend).upper() not in {"UNCLEAR", "UNKNOWN", "NONE"}:
+        return _display_trend(raw_trend)
+
+    indicators = section.get("indicators", {}) if isinstance(section, dict) else {}
+    ema_trend = _ema_bias(indicators)
+    if ema_trend != "Menunggu data":
+        return ema_trend
+
+    bars_count = section.get("bars_count") if isinstance(section, dict) else None
+    if bars_count == 0:
+        return "Menunggu data"
+    return "Belum ada bias jelas"
 
 
 def _indicators(payload: dict, key: str) -> dict:
@@ -223,35 +271,45 @@ def _indicators(payload: dict, key: str) -> dict:
 
 
 def _ema_bias(indicators: dict) -> str:
-    ema20 = indicators.get("ema_20")
+    ema200 = indicators.get("ema_200")
     ema50 = indicators.get("ema_50")
-    if ema20 is None or ema50 is None:
-        return "N/A"
+    if ema50 is None or ema200 is None:
+        return "Menunggu data"
     try:
-        if float(ema20) > float(ema50):
+        if float(ema50) > float(ema200):
             return "Bullish"
-        if float(ema20) < float(ema50):
+        if float(ema50) < float(ema200):
             return "Bearish"
-        return "Flat"
+        return "Belum ada bias jelas"
     except (TypeError, ValueError):
-        return "N/A"
+        return "Menunggu data"
+
+
+def _decision_bias_or_payload(decision_value, payload: dict, key: str) -> str:
+    value = _enum_value(decision_value) if decision_value else ""
+    if value and value.upper() not in {"UNCLEAR", "N/A"}:
+        return value
+    return _section_trend(payload, key)
 
 
 def _format_bias_map(decision, payload: dict) -> list[str]:
     htf = getattr(decision, "higher_timeframe_bias", None)
     etf = getattr(decision, "entry_timeframe_bias", None)
-    d1 = _enum_value(htf) if htf else _section_trend(payload, "higher_timeframe")
+    d1 = _decision_bias_or_payload(htf, payload, "higher_timeframe")
     h4 = _section_trend(payload, "secondary_timeframe")
     h1 = _section_trend(payload, "primary_timeframe")
-    m5 = _enum_value(etf) if etf else _section_trend(payload, "entry_timeframe")
+    m5 = _decision_bias_or_payload(etf, payload, "entry_timeframe")
     regime = getattr(decision, "market_regime", None)
-    regime_text = _enum_value(regime) if regime else _val((payload or {}).get("overall_regime", {}).get("regime"))
-    regime_desc = _val((payload or {}).get("overall_regime", {}).get("description"))
+    raw_regime = _enum_value(regime) if regime else (payload or {}).get("overall_regime", {}).get("regime")
+    if raw_regime and str(raw_regime).upper() in {"UNCLEAR", "N/A"}:
+        raw_regime = (payload or {}).get("overall_regime", {}).get("regime")
+    regime_text = _display_regime(raw_regime)
+    regime_desc = _val((payload or {}).get("overall_regime", {}).get("description"), default="")
     return [
         "\n<b>🧭 Bias Map</b>",
         f"D1: {_escape_html(d1)} | H4: {_escape_html(h4)}",
         f"H1: {_escape_html(h1)} | M5: {_escape_html(m5)}",
-        f"Regime: {regime_text}" + (f" / {regime_desc}" if regime_desc != "N/A" else ""),
+        f"Regime: {regime_text}" + (f" / {regime_desc}" if regime_desc else ""),
     ]
 
 
@@ -267,10 +325,14 @@ def _format_price(payload: dict) -> list[str]:
 def _format_momentum(payload: dict) -> list[str]:
     m5_ind = _indicators(payload, "entry_timeframe")
     h1_ind = _indicators(payload, "primary_timeframe")
+    m5_rsi = _fmt_alert_num(m5_ind.get("rsi_14"))
+    h1_rsi = _fmt_alert_num(h1_ind.get("rsi_14"))
+    m5_state = _display_rsi_state(m5_ind.get("rsi_state"))
+    h1_state = _display_rsi_state(h1_ind.get("rsi_state"))
     return [
         "\n<b>📈 Momentum</b>",
-        f"M5 RSI: {_fmt_num(m5_ind.get('rsi_14'))} | EMA20/50: {_ema_bias(m5_ind)}",
-        f"H1 RSI: {_fmt_num(h1_ind.get('rsi_14'))} | EMA20/50: {_ema_bias(h1_ind)}",
+        f"M5 RSI: {m5_rsi} ({m5_state}) | EMA50/200: {_ema_bias(m5_ind)}",
+        f"H1 RSI: {h1_rsi} ({h1_state}) | EMA50/200: {_ema_bias(h1_ind)}",
     ]
 
 
@@ -291,12 +353,12 @@ def _format_smc(payload: dict) -> list[str]:
     nearest_demand = demand[-1].get("low") if demand else None
     nearest_supply = supply[-1].get("high") if supply else None
     liq = liquidity[0] if liquidity else {}
-    liq_text = f"{liq.get('type', 'level')} @ {_fmt_num(liq.get('price'))}" if liq else "N/A"
+    liq_text = f"{liq.get('type', 'level')} @ {_fmt_alert_num(liq.get('price'))}" if liq else "Menunggu data"
     return [
         "\n<b>🧱 SMC</b>",
-        f"CHoCH: {_val(direction)}",
-        f"Nearest Demand: {_fmt_num(nearest_demand)}",
-        f"Nearest Supply: {_fmt_num(nearest_supply)}",
+        f"CHoCH: {_display_trend(direction)}",
+        f"Nearest Demand: {_fmt_alert_num(nearest_demand)}",
+        f"Nearest Supply: {_fmt_alert_num(nearest_supply)}",
         f"Liquidity: {_escape_html(liq_text)}",
     ]
 
@@ -311,8 +373,8 @@ def _format_orderflow(payload: dict) -> list[str]:
     dom = orderflow.get("dom_imbalance")
     return [
         "\n<b>⚖️ Orderflow</b>",
-        f"Delta: {_val(delta_text)}",
-        f"DOM: {_val(dom)}",
+        f"Delta: {_val(delta_text, default='Menunggu data')}",
+        f"DOM: {_val(dom, default='Menunggu data')}",
     ]
 
 

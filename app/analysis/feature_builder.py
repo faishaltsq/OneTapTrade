@@ -37,7 +37,7 @@ def _safe_candle(df: pd.DataFrame) -> dict:
 
 def _safe_indicators(df: pd.DataFrame) -> dict:
     if df is None or len(df) == 0:
-        return {"ema_20": None, "ema_50": None, "rsi_14": None, "atr_14": None}
+        return {"ema_50": None, "ema_200": None, "rsi_14": None, "rsi_state": "MENUNGGU_DATA", "atr_14": None}
 
     def _last(series):
         if series is None or series.empty or series.dropna().empty:
@@ -45,10 +45,21 @@ def _safe_indicators(df: pd.DataFrame) -> dict:
         val = series.dropna().iloc[-1]
         return round(float(val), 5) if not pd.isna(val) else None
 
+    rsi_14 = _last(calc_rsi(df, 14))
+    if rsi_14 is None:
+        rsi_state = "MENUNGGU_DATA"
+    elif rsi_14 < 25:
+        rsi_state = "OVERSOLD"
+    elif rsi_14 > 75:
+        rsi_state = "OVERBOUGHT"
+    else:
+        rsi_state = "NORMAL"
+
     return {
-        "ema_20": _last(calc_ema(df, 20)),
         "ema_50": _last(calc_ema(df, 50)),
-        "rsi_14": _last(calc_rsi(df, 14)),
+        "ema_200": _last(calc_ema(df, 200)),
+        "rsi_14": rsi_14,
+        "rsi_state": rsi_state,
         "atr_14": _last(calc_atr(df, 14)),
     }
 

@@ -61,3 +61,15 @@ def test_system_prompt_includes_d1_and_position_lock_rules():
     assert "D1_RANGING" in prompt and "breakout + retest" in prompt
     assert "Same-direction add-ons are allowed" in prompt
     assert "Opposite direction is blocked" in prompt
+
+
+def test_system_prompt_uses_ema50_ema200_and_rsi_25_75_thresholds():
+    from app.ai_engine.prompt_builder import build_system_prompt
+
+    prompt = build_system_prompt()
+
+    assert "EMA50/EMA200" in prompt
+    assert ">75" in prompt
+    assert "<25" in prompt
+    assert ">70" not in prompt
+    assert "<30" not in prompt

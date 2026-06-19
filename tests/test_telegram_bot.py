@@ -68,19 +68,19 @@ def _market_payload_fixture():
         "current_price": {"bid": 2432.10, "ask": 2432.45, "spread_points": 35},
         "higher_timeframe": {
             "market_structure": {"trend": "BULLISH"},
-            "indicators": {"rsi_14": 58.2, "ema_20": 2430.0, "ema_50": 2420.0},
+            "indicators": {"rsi_14": 58.2, "rsi_state": "NORMAL", "ema_50": 2430.0, "ema_200": 2420.0},
         },
         "secondary_timeframe": {
             "market_structure": {"trend": "RANGING"},
-            "indicators": {"rsi_14": 51.0, "ema_20": 2431.0, "ema_50": 2431.5},
+            "indicators": {"rsi_14": 51.0, "rsi_state": "NORMAL", "ema_50": 2431.0, "ema_200": 2431.5},
         },
         "primary_timeframe": {
             "market_structure": {"trend": "BULLISH"},
-            "indicators": {"rsi_14": 56.4, "ema_20": 2434.0, "ema_50": 2424.0},
+            "indicators": {"rsi_14": 56.4, "rsi_state": "NORMAL", "ema_50": 2434.0, "ema_200": 2424.0},
         },
         "entry_timeframe": {
             "market_structure": {"trend": "BEARISH"},
-            "indicators": {"rsi_14": 48.1, "ema_20": 2430.0, "ema_50": 2435.0},
+            "indicators": {"rsi_14": 48.1, "rsi_state": "NORMAL", "ema_50": 2430.0, "ema_200": 2435.0},
         },
         "overall_regime": {"regime": "RANGING", "description": "Low momentum"},
         "orderflow_proxy": {"delta_proxy": {"bias": "SELL_PRESSURE"}, "dom_imbalance": None},
@@ -119,7 +119,62 @@ def test_market_trend_alert_hold_uses_dashboard_sections():
     assert "Orderflow" in message
     assert "Read" in message
     assert "Bid/Ask: 2432.1 / 2432.45" in message
-    assert "M5 RSI: 48.1" in message
+    assert "M5 RSI: 48.1 (Normal)" in message
+    assert "EMA50/200" in message
+
+
+def test_market_trend_alert_uses_readable_fallbacks_and_ema_bias():
+    from app.ai_engine.schemas import AIDecisionResponse, ConfidenceLabel, Decision, MarketRegime, TimeframeBias
+    from app.telegram_bot.message_templates import format_market_trend_alert
+
+    decision = AIDecisionResponse(
+        decision=Decision.HOLD,
+        confidence=0.0,
+        confidence_label=ConfidenceLabel.LOW,
+        market_regime=MarketRegime.UNCLEAR,
+        higher_timeframe_bias=TimeframeBias.UNCLEAR,
+        entry_timeframe_bias=TimeframeBias.UNCLEAR,
+        main_reason="No clear trade setup.",
+    )
+    payload = {
+        "current_price": {"bid": 113.036, "ask": 113.056, "spread_points": 20},
+        "higher_timeframe": {
+            "bars_count": 100,
+            "market_structure": {"trend": "UNCLEAR"},
+            "indicators": {"rsi_14": 50.0, "rsi_state": "NORMAL", "ema_50": 113.2, "ema_200": 112.9},
+        },
+        "secondary_timeframe": {
+            "bars_count": 0,
+            "market_structure": {},
+            "indicators": {"rsi_14": None, "rsi_state": "MENUNGGU_DATA", "ema_50": None, "ema_200": None},
+        },
+        "primary_timeframe": {
+            "bars_count": 100,
+            "market_structure": {"trend": "UNCLEAR"},
+            "indicators": {"rsi_14": 48.8701, "rsi_state": "NORMAL", "ema_50": 113.0, "ema_200": 113.2},
+        },
+        "entry_timeframe": {
+            "bars_count": 100,
+            "market_structure": {"trend": "UNCLEAR"},
+            "indicators": {"rsi_14": 41.7974, "rsi_state": "NORMAL", "ema_50": 113.0, "ema_200": 113.1},
+        },
+        "overall_regime": {"regime": "UNCLEAR", "description": "Price range contracted."},
+        "orderflow_proxy": {"delta_proxy": None, "dom_imbalance": None},
+        "smc": {"choch": {}, "order_blocks": {}, "liquidity_levels": []},
+    }
+
+    message = format_market_trend_alert(decision, "AUDJPY.c", payload)
+
+    assert "D1: Bullish" in message
+    assert "H4: Menunggu data" in message
+    assert "H1: Bearish" in message
+    assert "M5: Bearish" in message
+    assert "Regime: Belum ada bias jelas" in message
+    assert "M5 RSI: 41.7974 (Normal) | EMA50/200: Bearish" in message
+    assert "Delta: Menunggu data" in message
+    assert "DOM: Menunggu data" in message
+    assert "N/A" not in message
+    assert "UNCLEAR" not in message
 
 
 def test_market_trend_alert_buy_includes_trade_plan_and_risk_check():

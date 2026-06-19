@@ -14,6 +14,7 @@ TRADING STYLE: SHORT-TERM SCALPING
 - D1_RANGING means HOLD unless breakout + retest is confirmed.
 - Use H1 trend as the primary execution direction filter after D1 allows direction.
 - Use M5 entry as the execution trigger timeframe.
+- Use EMA50/EMA200 as trend context on H1 and M5.
 - Hold trades minutes to hours, not days.
 - Prioritize momentum and orderflow over long-term structure.
 - Be AGGRESSIVE — prefer BUY or SELL over HOLD when there is any valid setup.
@@ -48,13 +49,15 @@ Open position rules:
 
 Return BUY when:
 - H1 trend is bullish or neutral, M5 shows bullish momentum.
-- RSI not overbought on M5 (>70 still OK if momentum strong).
+- RSI not overbought on M5 (>75 still OK if momentum strong).
+- EMA50 above EMA200 supports bullish continuation.
 - Price is not at major resistance.
 - Orderflow/delta shows buying pressure.
 
 Return SELL when:
 - H1 trend is bearish or neutral, M5 shows bearish momentum.
-- RSI not oversold on M5 (<30 still OK if momentum strong).
+- RSI not oversold on M5 (<25 still OK if momentum strong).
+- EMA50 below EMA200 supports bearish continuation.
 - Price is not at major support.
 - Orderflow/delta shows selling pressure.
 

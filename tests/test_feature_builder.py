@@ -95,6 +95,28 @@ class TestBuildMarketPayload:
         assert result["entry_timeframe"]["timeframe"] == "M5"
         assert "orderflow" in result["entry_timeframe"]
 
+    def test_indicators_include_ema200_and_rsi_state(self):
+        df_entry = _make_df(250)
+
+        result = build_market_payload(
+            symbol="XAUUSD",
+            df_d1=None,
+            df_h4=None,
+            df_h1=None,
+            df_m15=df_entry,
+            bid=2010.0,
+            ask=2010.5,
+            spread_points=5,
+        )
+
+        indicators = result["entry_timeframe"]["indicators"]
+        assert "ema_50" in indicators
+        assert "ema_200" in indicators
+        assert "rsi_state" in indicators
+        assert indicators["ema_200"] is not None
+        assert indicators["rsi_state"] in {"OVERSOLD", "NORMAL", "OVERBOUGHT", "MENUNGGU_DATA"}
+        assert "ema_20" not in indicators
+
     def test_handles_empty_dataframe(self):
         empty_df = pd.DataFrame()
 
