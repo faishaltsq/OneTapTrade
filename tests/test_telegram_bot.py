@@ -550,3 +550,65 @@ def test_settings_message_shows_swing_for_low_profile():
         assert "H4/D1" in msg
     finally:
         settings.risk_profile = original_profile
+
+
+def test_strategy_smc_callback_sets_settings_and_persists():
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from app.telegram_bot.callbacks import menu_strategy_smc_cb
+    from app.config import settings
+
+    original_mode = settings.strategy_mode
+    try:
+        settings.strategy_mode = "AI_ONLY"
+        query = MagicMock()
+        query.answer = AsyncMock()
+        update = MagicMock()
+        update.callback_query = query
+        update.effective_chat.id = 123
+
+        with patch("app.config.settings.telegram_allowed_chat_id", "123"), \
+             patch("app.database.repositories.update_bot_settings") as mock_update:
+            import asyncio
+            asyncio.new_event_loop().run_until_complete(menu_strategy_smc_cb(update, MagicMock()))
+
+        assert settings.strategy_mode == "SMC_AI"
+        mock_update.assert_called_once_with({"strategy_mode": "SMC_AI"})
+    finally:
+        settings.strategy_mode = original_mode
+
+
+def test_strategy_ai_callback_sets_settings_and_persists():
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from app.telegram_bot.callbacks import menu_strategy_ai_cb
+    from app.config import settings
+
+    original_mode = settings.strategy_mode
+    try:
+        settings.strategy_mode = "SMC_AI"
+        query = MagicMock()
+        query.answer = AsyncMock()
+        update = MagicMock()
+        update.callback_query = query
+        update.effective_chat.id = 123
+
+        with patch("app.config.settings.telegram_allowed_chat_id", "123"), \
+             patch("app.database.repositories.update_bot_settings") as mock_update:
+            import asyncio
+            asyncio.new_event_loop().run_until_complete(menu_strategy_ai_cb(update, MagicMock()))
+
+        assert settings.strategy_mode == "AI_ONLY"
+        mock_update.assert_called_once_with({"strategy_mode": "AI_ONLY"})
+    finally:
+        settings.strategy_mode = original_mode
+
+
+def test_get_callback_handlers_includes_strategy_handlers():
+    from app.telegram_bot.callbacks import get_callback_handlers
+
+    patterns = []
+    for handler in get_callback_handlers():
+        if hasattr(handler, "pattern"):
+            patterns.append(str(handler.pattern))
+
+    assert any("MENU_STRATEGY_SMC" in p for p in patterns)
+    assert any("MENU_STRATEGY_AI" in p for p in patterns)
