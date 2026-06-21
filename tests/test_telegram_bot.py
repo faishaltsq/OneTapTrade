@@ -492,8 +492,61 @@ def test_settings_message_says_sl_tp_are_ai_owned():
 
     message = format_settings_message()
 
-    assert "SL/TP:" in message
-    assert "AI-owned" in message
-    assert "SL Range" not in message
-    assert "Min R:R" not in message
-    assert "TP:</b> min" not in message
+    assert "SL range:" in message
+    assert "TP range:" in message
+    assert "AI-owned" not in message
+    assert "Scalping Settings" not in message
+    assert "Strategy:" in message
+
+
+def test_main_menu_contains_strategy_toggle_buttons():
+    from app.telegram_bot.message_templates import build_main_menu_keyboard
+
+    callbacks = _keyboard_callback_data(build_main_menu_keyboard(strategy_mode="SMC_AI"))
+
+    assert "MENU_STRATEGY_SMC" in callbacks
+    assert "MENU_STRATEGY_AI" in callbacks
+
+
+def test_settings_keyboard_contains_strategy_toggle_buttons():
+    from app.telegram_bot.message_templates import build_settings_keyboard
+
+    callbacks = _keyboard_callback_data(build_settings_keyboard())
+
+    assert "MENU_STRATEGY_SMC" in callbacks
+    assert "MENU_STRATEGY_AI" in callbacks
+
+
+def test_settings_message_shows_strategy_and_style():
+    from app.telegram_bot.message_templates import format_settings_message
+    from app.config import settings
+
+    original_mode = settings.strategy_mode
+    original_profile = settings.risk_profile
+    try:
+        settings.strategy_mode = "AI_ONLY"
+        settings.risk_profile = "MEDIUM"
+        msg = format_settings_message()
+
+        assert "AI Only" in msg or "AI_ONLY" in msg
+        assert "Daytrade" in msg
+        assert "H1/H4" in msg
+        assert "hours-days" in msg
+    finally:
+        settings.strategy_mode = original_mode
+        settings.risk_profile = original_profile
+
+
+def test_settings_message_shows_swing_for_low_profile():
+    from app.telegram_bot.message_templates import format_settings_message
+    from app.config import settings
+
+    original_profile = settings.risk_profile
+    try:
+        settings.risk_profile = "LOW"
+        msg = format_settings_message()
+
+        assert "Swing" in msg
+        assert "H4/D1" in msg
+    finally:
+        settings.risk_profile = original_profile
