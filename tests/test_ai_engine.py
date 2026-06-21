@@ -1,5 +1,5 @@
 import sys
-sys.path.insert(0, r'C:\Users\faishaltsq\Documents\Kerjaan\Things that i want to build\OneTapTrade\ai-trading-executor')
+sys.path.insert(0, r'C:\Users\faishaltsq\Documents\Kerjaan\Things that i want to build\OneTapTrade')
 
 from app.ai_engine import (
     AIDecisionResponse, Decision, ConfidenceLabel, MarketRegime, TimeframeBias,
@@ -37,7 +37,7 @@ print("3. DecisionValidationError OK")
 
 # 4. Prompt builders
 sys_prompt = build_system_prompt()
-assert "scalping" in sys_prompt.lower()
+assert "trading system" in sys_prompt.lower()
 payload = {"symbol": "XAUUSD", "bid": 2500.0}
 user_prompt = build_user_prompt(payload)
 assert "XAUUSD" in user_prompt
@@ -222,3 +222,33 @@ def test_validate_decision_corrects_ai_allows_execution_false_on_buy_sell():
 
     assert corrected.decision == Decision.SELL
     assert corrected.execution_permission.ai_allows_execution is True
+
+
+def test_validated_decision_includes_strategy_mode_and_trading_style():
+    from unittest.mock import patch, MagicMock
+    from app.ai_engine.deepseek_client import get_ai_decision
+    from app.config import settings
+
+    original_mode = settings.strategy_mode
+    original_profile = settings.risk_profile
+    try:
+        settings.strategy_mode = "AI_ONLY"
+        settings.risk_profile = "HIGH"
+
+        fake_response = MagicMock()
+        fake_response.choices = [MagicMock()]
+        fake_response.choices[0].message.content = '{"decision":"BUY","confidence":0.6,"confidence_label":"MEDIUM","market_regime":"TRENDING_UP","higher_timeframe_bias":"BULLISH","entry_timeframe_bias":"BULLISH","main_reason":"mock","entry_plan":{"entry_type":"MARKET","stop_loss":1990,"take_profit_1":2020,"preferred_entry_price":2000,"risk_reward_to_tp1":3.0},"execution_permission":{"ai_allows_execution":true,"reason":"ok"},"risk_notes":{"main_risk":"","invalidation_condition":"","conditions_to_avoid_trade":[]},"final_comment":""}'
+        fake_response.usage = None
+
+        with patch("app.ai_engine.deepseek_client.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = fake_response
+            mock_openai.return_value = mock_client
+            with patch("app.config.settings.deepseek_api_key", "test-key"):
+                decision = get_ai_decision({"symbol": "XAUUSD"})
+
+        assert decision.strategy_mode == "AI_ONLY"
+        assert decision.trading_style == "SCALPING"
+    finally:
+        settings.strategy_mode = original_mode
+        settings.risk_profile = original_profile

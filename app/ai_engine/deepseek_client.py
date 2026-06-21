@@ -125,6 +125,9 @@ def get_ai_decision(market_payload: dict) -> AIDecisionResponse:
 
     validated = validate_decision(AIDecisionResponse(**parsed), market_payload=market_payload)
 
+    validated.strategy_mode = settings.strategy_mode
+    validated.trading_style = settings.effective_style
+
     logger.info(
         f"AI decision: {validated.decision.value} | "
         f"confidence: {validated.confidence:.2f} ({validated.confidence_label.value}) | "
