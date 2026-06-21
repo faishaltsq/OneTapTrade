@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     default_symbol: str = "XAUUSD"
     default_symbols: str = ""
     risk_profile: str = "MEDIUM"
+    strategy_mode: str = "SMC_AI"
     risk_per_trade_percent: float = 0.5
     max_daily_drawdown_percent: float = 2.0
     max_open_positions: int = 1
@@ -47,22 +48,31 @@ class Settings(BaseSettings):
     def risk_profile_config(self) -> dict:
         profiles = {
             "LOW": {
-                "min_confidence": 0.65,
-                "min_risk_reward": 2.0,
-                "min_sl_pips": 30,
-                "max_sl_pips": 100,
+                "style": "SWING",
+                "entry_tf": ["H4", "D1"],
+                "hold": "days-weeks",
+                "min_confidence": 0.70,
+                "min_risk_reward": 2.5,
+                "sl_pips": (100, 500),
+                "tp_pips": (200, 1000),
             },
             "MEDIUM": {
+                "style": "DAYTRADE",
+                "entry_tf": ["H1", "H4"],
+                "hold": "hours-days",
                 "min_confidence": 0.55,
-                "min_risk_reward": 1.5,
-                "min_sl_pips": 30,
-                "max_sl_pips": 100,
+                "min_risk_reward": 1.8,
+                "sl_pips": (50, 150),
+                "tp_pips": (75, 300),
             },
             "HIGH": {
+                "style": "SCALPING",
+                "entry_tf": ["M5", "M15"],
+                "hold": "minutes-hours",
                 "min_confidence": 0.40,
                 "min_risk_reward": 1.2,
-                "min_sl_pips": 15,
-                "max_sl_pips": 80,
+                "sl_pips": (15, 50),
+                "tp_pips": (15, 75),
             },
         }
         return profiles.get(self.risk_profile, profiles["MEDIUM"])
@@ -103,11 +113,31 @@ class Settings(BaseSettings):
 
     @property
     def effective_min_sl_pips(self) -> int:
-        return self.risk_profile_config["min_sl_pips"]
+        return self.risk_profile_config["sl_pips"][0]
 
     @property
     def effective_max_sl_pips(self) -> int:
-        return self.risk_profile_config["max_sl_pips"]
+        return self.risk_profile_config["sl_pips"][1]
+
+    @property
+    def effective_style(self) -> str:
+        return self.risk_profile_config["style"]
+
+    @property
+    def effective_entry_tfs(self) -> list:
+        return self.risk_profile_config["entry_tf"]
+
+    @property
+    def effective_hold_time(self) -> str:
+        return self.risk_profile_config["hold"]
+
+    @property
+    def effective_sl_pip_range(self) -> tuple:
+        return self.risk_profile_config["sl_pips"]
+
+    @property
+    def effective_tp_pip_range(self) -> tuple:
+        return self.risk_profile_config["tp_pips"]
 
 
 settings = Settings()
