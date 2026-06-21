@@ -13,16 +13,20 @@ def test_strategy_mode_default_is_smc_ai():
 def test_risk_profile_config_has_style_and_timeframe_fields():
     from app.config import settings
 
-    for profile in ("LOW", "MEDIUM", "HIGH"):
-        settings.risk_profile = profile
-        cfg = settings.risk_profile_config
-        assert "style" in cfg
-        assert "entry_tf" in cfg
-        assert "hold" in cfg
-        assert "sl_pips" in cfg
-        assert "tp_pips" in cfg
-        assert "min_confidence" in cfg
-        assert "min_risk_reward" in cfg
+    original = settings.risk_profile
+    try:
+        for profile in ("LOW", "MEDIUM", "HIGH"):
+            settings.risk_profile = profile
+            cfg = settings.risk_profile_config
+            assert "style" in cfg
+            assert "entry_tf" in cfg
+            assert "hold" in cfg
+            assert "sl_pips" in cfg
+            assert "tp_pips" in cfg
+            assert "min_confidence" in cfg
+            assert "min_risk_reward" in cfg
+    finally:
+        settings.risk_profile = original
 
 
 def test_low_profile_maps_to_swing():

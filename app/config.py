@@ -124,7 +124,7 @@ class Settings(BaseSettings):
         return self.risk_profile_config["style"]
 
     @property
-    def effective_entry_tfs(self) -> list:
+    def effective_entry_tfs(self) -> list[str]:
         return self.risk_profile_config["entry_tf"]
 
     @property
@@ -132,11 +132,11 @@ class Settings(BaseSettings):
         return self.risk_profile_config["hold"]
 
     @property
-    def effective_sl_pip_range(self) -> tuple:
+    def effective_sl_pip_range(self) -> tuple[int, int]:
         return self.risk_profile_config["sl_pips"]
 
     @property
-    def effective_tp_pip_range(self) -> tuple:
+    def effective_tp_pip_range(self) -> tuple[int, int]:
         return self.risk_profile_config["tp_pips"]
 
 
