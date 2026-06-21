@@ -399,8 +399,9 @@ def test_high_profile_thresholds_are_aggressive():
 
         assert settings.effective_min_confidence == 0.40
         assert settings.effective_min_risk_reward == 1.2
-        assert settings.effective_min_sl_pips == 15
-        assert settings.effective_max_sl_pips == 80
+        assert settings.effective_sl_pip_range == (15, 50)
+        assert settings.effective_tp_pip_range == (15, 75)
+        assert settings.effective_style == "SCALPING"
     finally:
         settings.risk_profile = original_profile
 
