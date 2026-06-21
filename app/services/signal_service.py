@@ -162,6 +162,84 @@ def generate_signal(symbol: Optional[str] = None) -> dict:
 
         snapshot_id = snapshot_row.get("id") if snapshot_row else None
 
+        from app.analysis.noise_filter import evaluate_noise_filter
+
+        noise_result = evaluate_noise_filter(df_d1, df_h4, df_h1, df_m15, settings.risk_profile)
+        logger.info(f"Noise filter result: passed={noise_result['passed']}, blocked_by={noise_result['blocked_by']}")
+
+        if not noise_result["passed"]:
+            from app.ai_engine.schemas import (
+                AIDecisionResponse,
+                ConfidenceLabel,
+                Decision,
+                EntryPlan,
+                EntryType,
+                ExecutionPermission,
+                MarketRegime,
+                RiskNotes,
+                TimeframeBias,
+            )
+
+            regime_raw = market_payload.get("overall_regime", {}).get("regime", "UNCLEAR")
+            try:
+                regime_enum = MarketRegime(regime_raw)
+            except ValueError:
+                regime_enum = MarketRegime.UNCLEAR
+
+            hold_decision = AIDecisionResponse(
+                decision=Decision.HOLD,
+                confidence=0.0,
+                confidence_label=ConfidenceLabel.LOW,
+                market_regime=regime_enum,
+                higher_timeframe_bias=TimeframeBias.UNCLEAR,
+                entry_timeframe_bias=TimeframeBias.UNCLEAR,
+                main_reason=f"Noise filter: {noise_result['hold_reason']}",
+                entry_plan=EntryPlan(entry_type=EntryType.NONE),
+                execution_permission=ExecutionPermission(
+                    ai_allows_execution=False,
+                    reason=f"Noise filter: {noise_result['hold_reason']}",
+                ),
+                risk_notes=RiskNotes(
+                    main_risk=noise_result["hold_reason"],
+                    invalidation_condition="Wait for noise filter conditions to clear",
+                    conditions_to_avoid_trade=[noise_result["hold_reason"]],
+                ),
+                final_comment=f"HOLD (noise filter) — {noise_result['hold_reason']}",
+                strategy_mode=settings.strategy_mode,
+                trading_style=settings.effective_style,
+            )
+
+            try:
+                from app.ai_engine.decision_parser import format_decision_for_db
+                from app.database.repositories import save_ai_decision
+
+                decision_db = format_decision_for_db(hold_decision)
+                decision_db["symbol"] = sym
+                decision_db["market_snapshot_id"] = snapshot_id
+                decision_db["model_name"] = "noise_filter"
+                decision_db["input_json"] = {**market_payload, "noise_filter": noise_result}
+                decision_db["output_json"] = hold_decision.model_dump()
+
+                decision_row = save_ai_decision(decision_db)
+            except Exception as e:
+                logger.error(f"Failed to save noise-filter HOLD decision: {e}")
+                decision_row = None
+
+            return {
+                "symbol": sym,
+                "ai_decision": hold_decision,
+                "risk_result": {
+                    "approved": False,
+                    "reason": f"Noise filter: {noise_result['hold_reason']}",
+                    "checks": {},
+                    "decision_summary": f"NOISE_FILTER | {noise_result['hold_reason']}",
+                },
+                "market_payload": market_payload,
+                "snapshot_id": snapshot_id,
+                "decision_id": decision_row.get("id") if decision_row else None,
+                "noise_filter": noise_result,
+            }
+
         from app.ai_engine.deepseek_client import get_ai_decision, validate_decision
 
         logger.info("Step 11: Requesting AI decision...")

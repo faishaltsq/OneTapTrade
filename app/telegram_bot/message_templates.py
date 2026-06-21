@@ -26,11 +26,13 @@ def _bool_emoji(value: bool) -> str:
     return "\u2705" if value else "\u274c"
 
 
-def build_main_menu_keyboard(is_paused: bool = True, mode: str = "SIGNAL_ONLY", active_symbol: str = "ALL") -> "InlineKeyboardMarkup":
+def build_main_menu_keyboard(is_paused: bool = True, mode: str = "SIGNAL_ONLY", active_symbol: str = "ALL", strategy_mode: str = "SMC_AI") -> "InlineKeyboardMarkup":
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     pause_btn = InlineKeyboardButton("\u25b6\ufe0f Resume" if is_paused else "\u23f8\ufe0f Pause", callback_data="MENU_TOGGLE_PAUSE")
     mode_label = {"SIGNAL_ONLY": "Signal", "SEMI_AUTO": "Semi-Auto", "AUTO_DEMO": "Auto Demo", "LIVE_AUTO": "Live"}.get(mode, mode)
+    smc_marker = " \u2705" if strategy_mode == "SMC_AI" else ""
+    ai_marker = " \u2705" if strategy_mode == "AI_ONLY" else ""
 
     keyboard = [
         [
@@ -44,6 +46,10 @@ def build_main_menu_keyboard(is_paused: bool = True, mode: str = "SIGNAL_ONLY", 
         [
             InlineKeyboardButton(f"\U0001f4ca All Pairs", callback_data="MENU_SYMBOL_ALL"),
             InlineKeyboardButton(f"\U0001f504 Next Pair", callback_data="MENU_SYMBOL_NEXT"),
+        ],
+        [
+            InlineKeyboardButton(f"\U0001f9e0 SMC+AI{smc_marker}", callback_data="MENU_STRATEGY_SMC"),
+            InlineKeyboardButton(f"\U0001f916 AI Only{ai_marker}", callback_data="MENU_STRATEGY_AI"),
         ],
         [pause_btn],
         [
@@ -66,11 +72,20 @@ def build_main_menu_keyboard(is_paused: bool = True, mode: str = "SIGNAL_ONLY", 
 def build_settings_keyboard() -> "InlineKeyboardMarkup":
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+    from app.config import settings
+
+    smc_marker = " \u2705" if settings.strategy_mode == "SMC_AI" else ""
+    ai_marker = " \u2705" if settings.strategy_mode == "AI_ONLY" else ""
+
     keyboard = [
         [
-            InlineKeyboardButton("🟢 Low", callback_data="MENU_RISK_LOW"),
-            InlineKeyboardButton("🟡 Med", callback_data="MENU_RISK_MEDIUM"),
-            InlineKeyboardButton("🔴 High", callback_data="MENU_RISK_HIGH"),
+            InlineKeyboardButton("\U0001f7e2 Low (Swing)", callback_data="MENU_RISK_LOW"),
+            InlineKeyboardButton("\U0001f7e1 Med (Day)", callback_data="MENU_RISK_MEDIUM"),
+            InlineKeyboardButton("\U0001f534 High (Scalp)", callback_data="MENU_RISK_HIGH"),
+        ],
+        [
+            InlineKeyboardButton(f"\U0001f9e0 SMC+AI{smc_marker}", callback_data="MENU_STRATEGY_SMC"),
+            InlineKeyboardButton(f"\U0001f916 AI Only{ai_marker}", callback_data="MENU_STRATEGY_AI"),
         ],
         [
             InlineKeyboardButton("Risk 0.25%", callback_data="MENU_RISK_TRADE_025"),
@@ -503,15 +518,26 @@ def _format_signal_message_legacy(decision, risk_result: dict, symbol: str) -> s
 
 
 def format_settings_message() -> str:
+    style_map = {"LOW": "Swing", "MEDIUM": "Daytrade", "HIGH": "Scalp"}
+    style = style_map.get(settings.risk_profile, settings.risk_profile)
+    strategy_label = "SMC+AI" if settings.strategy_mode == "SMC_AI" else "AI Only"
+    entry_tfs = "/".join(settings.effective_entry_tfs)
+    sl_lo, sl_hi = settings.effective_sl_pip_range
+    tp_lo, tp_hi = settings.effective_tp_pip_range
+    noise_strictness = {"LOW": "strict", "MEDIUM": "lenient", "HIGH": "very lenient"}.get(settings.risk_profile, "lenient")
+
     return (
-        "<b>\u2699\ufe0f Scalping Settings</b>\n\n"
-        f"<b>Risk Profile:</b> <code>{_escape_html(settings.risk_profile)}</code>\n"
+        "<b>\u2699\ufe0f Settings</b>\n\n"
+        f"<b>Strategy:</b> {strategy_label}\n"
+        f"<b>Profile:</b> {settings.risk_profile} \u2192 {style}\n"
+        f"<b>Entry TF:</b> {entry_tfs} | <b>Hold:</b> {settings.effective_hold_time}\n"
+        f"<b>Min Conf:</b> {settings.effective_min_confidence:.0%} | <b>Min R:R:</b> {settings.effective_min_risk_reward}\n"
+        f"<b>SL range:</b> {sl_lo}-{sl_hi} pips | <b>TP range:</b> {tp_lo}-{tp_hi} pips\n"
+        f"<b>Noise filter:</b> {noise_strictness} ({settings.risk_profile})\n"
         f"<b>Mode:</b> <code>{_escape_html(settings.bot_mode)}</code>\n"
         f"<b>Symbols:</b> <code>{_escape_html(settings.default_symbols or settings.default_symbol)}</code>\n"
         f"<b>Risk/Trade:</b> {settings.risk_per_trade_percent}%\n"
         f"<b>Max Daily DD:</b> {settings.max_daily_drawdown_percent}%\n"
-        f"<b>Min Confidence:</b> {settings.effective_min_confidence:.0%}\n"
-        "<b>SL/TP:</b> AI-owned\n"
         f"<b>Max Positions:</b> {settings.max_open_positions}\n"
         f"<b>Interval:</b> {settings.trading_loop_interval_seconds}s\n"
         f"<b>Live Trading:</b> {_bool_emoji(settings.live_trading_enabled)}"

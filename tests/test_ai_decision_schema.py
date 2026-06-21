@@ -198,3 +198,49 @@ class TestAIDecisionPartial:
         assert obj.entry_plan is not None
         assert obj.entry_plan.stop_loss == 2000.00
         assert obj.entry_plan.take_profit_1 == 2020.00
+
+
+def test_ai_decision_response_accepts_strategy_mode_and_trading_style():
+    from app.ai_engine.schemas import (
+        AIDecisionResponse,
+        ConfidenceLabel,
+        Decision,
+        MarketRegime,
+        TimeframeBias,
+    )
+
+    resp = AIDecisionResponse(
+        decision=Decision.HOLD,
+        confidence=0.0,
+        confidence_label=ConfidenceLabel.LOW,
+        market_regime=MarketRegime.UNCLEAR,
+        higher_timeframe_bias=TimeframeBias.UNCLEAR,
+        entry_timeframe_bias=TimeframeBias.UNCLEAR,
+        strategy_mode="AI_ONLY",
+        trading_style="SCALPING",
+    )
+
+    assert resp.strategy_mode == "AI_ONLY"
+    assert resp.trading_style == "SCALPING"
+
+
+def test_ai_decision_response_defaults_strategy_mode_and_trading_style_to_none():
+    from app.ai_engine.schemas import (
+        AIDecisionResponse,
+        ConfidenceLabel,
+        Decision,
+        MarketRegime,
+        TimeframeBias,
+    )
+
+    resp = AIDecisionResponse(
+        decision=Decision.HOLD,
+        confidence=0.0,
+        confidence_label=ConfidenceLabel.LOW,
+        market_regime=MarketRegime.UNCLEAR,
+        higher_timeframe_bias=TimeframeBias.UNCLEAR,
+        entry_timeframe_bias=TimeframeBias.UNCLEAR,
+    )
+
+    assert resp.strategy_mode is None
+    assert resp.trading_style is None

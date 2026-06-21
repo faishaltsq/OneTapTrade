@@ -579,6 +579,35 @@ async def menu_risk_high_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await menu_risk_callback(update, "HIGH")
 
 
+async def _menu_set_strategy(update: Update, mode: str) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    chat_id = str(update.effective_chat.id) if update.effective_chat else ""
+    if chat_id != settings.telegram_allowed_chat_id:
+        await query.answer("Unauthorized", show_alert=True)
+        return
+
+    settings.strategy_mode = mode
+    try:
+        from app.database.repositories import update_bot_settings
+
+        update_bot_settings({"strategy_mode": mode})
+    except Exception as e:
+        logger.error(f"Failed to persist strategy mode {mode}: {e}")
+    labels = {"SMC_AI": "SMC + AI", "AI_ONLY": "AI Only"}
+    await query.answer(f"Strategy: {labels.get(mode, mode)}")
+    await _edit_message(update, format_settings_message(), reply_markup=build_settings_keyboard())
+
+
+async def menu_strategy_smc_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _menu_set_strategy(update, "SMC_AI")
+
+
+async def menu_strategy_ai_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _menu_set_strategy(update, "AI_ONLY")
+
+
 async def menu_symbol_all_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if query is None:
@@ -621,6 +650,8 @@ def get_callback_handlers() -> list:
         CallbackQueryHandler(menu_risk_low_cb, pattern=r"^MENU_RISK_LOW$"),
         CallbackQueryHandler(menu_risk_medium_cb, pattern=r"^MENU_RISK_MEDIUM$"),
         CallbackQueryHandler(menu_risk_high_cb, pattern=r"^MENU_RISK_HIGH$"),
+        CallbackQueryHandler(menu_strategy_smc_cb, pattern=r"^MENU_STRATEGY_SMC$"),
+        CallbackQueryHandler(menu_strategy_ai_cb, pattern=r"^MENU_STRATEGY_AI$"),
         CallbackQueryHandler(menu_risk_trade_025_cb, pattern=r"^MENU_RISK_TRADE_025$"),
         CallbackQueryHandler(menu_risk_trade_050_cb, pattern=r"^MENU_RISK_TRADE_050$"),
         CallbackQueryHandler(menu_risk_trade_100_cb, pattern=r"^MENU_RISK_TRADE_100$"),

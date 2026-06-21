@@ -40,7 +40,7 @@ def update_bot_settings(updates: dict) -> dict | None:
             "symbol", "enabled", "mode", "is_paused",
             "risk_per_trade_percent", "max_daily_drawdown_percent",
             "max_spread_points", "min_confidence", "min_risk_reward",
-            "max_open_positions", "risk_profile",
+            "max_open_positions", "risk_profile", "strategy_mode",
         }
         filtered = {k: v for k, v in updates.items() if k in allowed}
         if not filtered:

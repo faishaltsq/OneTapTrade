@@ -76,6 +76,8 @@ class AIDecisionResponse(BaseModel):
     execution_permission: ExecutionPermission = ExecutionPermission()
     risk_notes: RiskNotes = RiskNotes()
     final_comment: str = ""
+    strategy_mode: Optional[str] = None
+    trading_style: Optional[str] = None
 
 
 class AIDecisionPartial(BaseModel):

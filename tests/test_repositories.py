@@ -46,3 +46,21 @@ def test_update_bot_settings_retries_without_missing_schema_column():
     assert table.update.call_args_list[0].args[0] == {"risk_profile": "HIGH", "risk_per_trade_percent": 1.0}
     assert table.update.call_args_list[1].args[0] == {"risk_per_trade_percent": 1.0}
     assert result["risk_per_trade_percent"] == 1.0
+
+
+def test_update_bot_settings_accepts_strategy_mode():
+    from unittest.mock import patch, MagicMock
+
+    with patch("app.database.repositories.get_supabase") as mock_get:
+        mock_client = MagicMock()
+        mock_get.return_value = mock_client
+
+        mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value = MagicMock(data=[{"id": "test-id"}])
+        mock_client.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[{"id": "test-id", "strategy_mode": "AI_ONLY"}])
+
+        from app.database.repositories import update_bot_settings
+
+        result = update_bot_settings({"strategy_mode": "AI_ONLY"})
+
+        assert result is not None
+        assert result["strategy_mode"] == "AI_ONLY"

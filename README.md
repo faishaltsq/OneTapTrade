@@ -29,6 +29,45 @@ AI-assisted MetaTrader 5 scalping executor with DeepSeek analysis, Telegram cont
 - Opposite-direction trades are blocked while a live position exists on the same symbol.
 - Spread is ignored for trade decisions.
 - AI owns SL/TP geometry, but BUY/SELL decisions must provide stop loss and take profit.
+- Strategy mode (SMC+AI or AI-only) controls how AI processes market data. See Strategy Modes below.
+- Trading style is bound to risk profile: LOW=Swing, MEDIUM=Daytrade, HIGH=Scalping. See Trading Style Profiles below.
+- Noise filter gates run before AI call to skip bad market conditions. See Noise Filter below.
+
+## Strategy Modes
+
+Two thinking modes, toggled via Telegram:
+
+| Mode | Description |
+| --- | --- |
+| `SMC_AI` | SMC + AI: AI uses Smart Money Concepts analysis (order blocks, FVG, CHoCH, liquidity) as primary methodology. Default. |
+| `AI_ONLY` | AI Only: AI receives all data but decides independently from first principles. No fixed methodology priority. |
+
+Toggle via Telegram main menu or settings keyboard. Persisted to Supabase `bot_settings.strategy_mode`.
+
+## Trading Style Profiles
+
+Risk profile binds to a trading style:
+
+| Profile | Style | Entry TF | Hold Time | Min Conf | Min R:R | SL Range | TP Range |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `LOW` | Swing | H4/D1 | days-weeks | 70% | 2.5 | 100-500 pips | 200-1000 pips |
+| `MEDIUM` | Daytrade | H1/H4 | hours-days | 55% | 1.8 | 50-150 pips | 75-300 pips |
+| `HIGH` | Scalping | M5/M15 | minutes-hours | 40% | 1.2 | 15-50 pips | 15-75 pips |
+
+Style affects:
+- AI system prompt (timeframe focus, hold time guidance, SL/TP ranges)
+- Noise filter strictness (LOW strict, MEDIUM lenient, HIGH very lenient)
+- Risk manager thresholds (min confidence, min R:R)
+
+## Noise Filter
+
+Pre-AI gate skips DeepSeek API call when market conditions are noisy. Three profile-aware gates:
+
+1. **Multi-TF alignment**: SWING strict (D1+H4 aligned), MEDIUM lenient (D1 clear + H1 not strongly opposite), HIGH skips.
+2. **ATR percentile**: SWING 20-85, MEDIUM 15-90, HIGH 10-95.
+3. **Volume confirmation**: SWING >1.2x avg, MEDIUM >0.8x avg, HIGH >0.5x avg.
+
+When noise filter blocks, bot returns HOLD with reason, saves to DB, sends Telegram update. No API call made.
 
 ## Architecture
 
@@ -164,6 +203,7 @@ API runs on `http://localhost:8000`.
 | `DEFAULT_SYMBOL` | Single default symbol | `XAUUSD.c` |
 | `DEFAULT_SYMBOLS` | Comma-separated symbols for loop | `XAUUSD.c,EURUSD.c,GBPJPY.c,GBPUSD.c` |
 | `RISK_PROFILE` | Risk profile | `LOW`, `MEDIUM`, or `HIGH` |
+| `STRATEGY_MODE` | Strategy thinking mode (`SMC_AI` or `AI_ONLY`) | `SMC_AI` |
 | `RISK_PER_TRADE_PERCENT` | Account risk per trade | `0.5` |
 | `MAX_DAILY_DRAWDOWN_PERCENT` | Daily drawdown stop | `2.0` |
 | `MAX_OPEN_POSITIONS` | Global position cap unless same-side add-on | `1` |
