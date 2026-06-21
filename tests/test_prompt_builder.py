@@ -104,6 +104,7 @@ def test_smc_ai_prompt_contains_smc_keywords():
     from app.config import settings
 
     original = settings.strategy_mode
+    original_profile = settings.risk_profile
     try:
         settings.strategy_mode = "SMC_AI"
         settings.risk_profile = "MEDIUM"
@@ -116,6 +117,7 @@ def test_smc_ai_prompt_contains_smc_keywords():
         assert "D1 major trend" in prompt
     finally:
         settings.strategy_mode = original
+        settings.risk_profile = original_profile
 
 
 def test_ai_only_prompt_omits_smc_priority_and_uses_first_principles():
@@ -123,6 +125,7 @@ def test_ai_only_prompt_omits_smc_priority_and_uses_first_principles():
     from app.config import settings
 
     original = settings.strategy_mode
+    original_profile = settings.risk_profile
     try:
         settings.strategy_mode = "AI_ONLY"
         settings.risk_profile = "MEDIUM"
@@ -134,6 +137,7 @@ def test_ai_only_prompt_omits_smc_priority_and_uses_first_principles():
         assert "ORDER BLOCKS" not in prompt
     finally:
         settings.strategy_mode = original
+        settings.risk_profile = original_profile
 
 
 def test_swing_style_block_present_for_low_profile():
