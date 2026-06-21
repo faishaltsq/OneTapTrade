@@ -113,6 +113,9 @@ def test_empty_dataframes_block_with_safe_reason():
     result = evaluate_noise_filter(empty, empty, empty, empty, "MEDIUM")
 
     assert result["passed"] is False
+    assert result["blocked_by"] is not None
+    assert isinstance(result["hold_reason"], str)
+    assert len(result["hold_reason"]) > 0
     assert "details" in result
 
 

@@ -27,7 +27,7 @@ def _volume_ratio(df: pd.DataFrame) -> float:
     return round(last / avg_20, 3)
 
 
-def _check_tf_alignment(d1_dir: str, h4_dir: str, h1_dir: str, m5_dir: str, profile: str) -> tuple[bool, str]:
+def _check_tf_alignment(d1_dir: str, h4_dir: str, h1_dir: str, profile: str) -> tuple[bool, str]:
     if profile == "LOW":
         if d1_dir == "UNCLEAR" or h4_dir == "UNCLEAR":
             return False, f"D1={d1_dir}, H4={h4_dir} — need both clear"
@@ -103,7 +103,7 @@ def evaluate_noise_filter(
     h1_dir = _trend_direction(df_h1)
     m5_dir = _trend_direction(df_m5)
 
-    tf_ok, tf_reason = _check_tf_alignment(d1_dir, h4_dir, h1_dir, m5_dir, profile)
+    tf_ok, tf_reason = _check_tf_alignment(d1_dir, h4_dir, h1_dir, profile)
     atr_ok, atr_reason, atr_pct = _check_atr_percentile(df_h1, profile)
     df_entry = _entry_df_for_profile(df_m5, df_h1, df_h4, profile)
     vol_ok, vol_reason, vol_ratio = _check_volume(df_entry, profile)
