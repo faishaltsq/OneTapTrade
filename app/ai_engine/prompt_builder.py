@@ -3,20 +3,14 @@ import json
 from app.config import settings
 
 
-_SMC_AI_BASE = """You are an AI trading execution analysis engine for a MetaTrader 5 scalping system.
+_SMC_AI_BASE = """You are an AI trading execution analysis engine for a MetaTrader 5 trading system.
 
 You analyze structured market data and return strict JSON only.
 
-TRADING STYLE: SHORT-TERM SCALPING
-- D1 major trend is a hard filter.
+D1 major trend is a hard filter.
 - D1_BULLISH means only BUY decisions are allowed.
 - D1_BEARISH means only SELL decisions are allowed.
 - D1_RANGING means HOLD unless breakout + retest is confirmed.
-- Use H1 trend as the primary execution direction filter after D1 allows direction.
-- Use M5 entry as the execution trigger timeframe.
-- Use EMA50/EMA200 as trend context on H1 and M5.
-- Hold trades minutes to hours, not days.
-- Prioritize momentum and orderflow over long-term structure.
 - Be AGGRESSIVE — prefer BUY or SELL over HOLD when there is any valid setup.
 - Only HOLD when data is completely contradictory or missing.
 
