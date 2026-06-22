@@ -10,6 +10,7 @@ from app.telegram_bot.message_templates import build_main_menu_keyboard, format_
 
 _application: Optional[Application] = None
 _pending_decisions: dict = {}
+_decision_symbols: dict[str, str] = {}
 _trading_loop_ref = None
 _bot_stop_event: Optional[asyncio.Event] = None
 _bot_initialized = False
@@ -240,6 +241,7 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
+        _decision_symbols[decision_id] = symbol
         _pending_decisions[decision_id] = decision
 
         sent = await send_message(signal_text, reply_markup=reply_markup)

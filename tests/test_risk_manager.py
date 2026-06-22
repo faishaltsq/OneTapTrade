@@ -71,6 +71,7 @@ def test_wide_ai_stop_loss_is_allowed_when_other_checks_pass(mock_validate, mock
     mock_settings.effective_min_sl_pips = 30
     mock_settings.effective_max_sl_pips = 100
     mock_settings.max_open_positions = 1
+    mock_settings.max_positions_per_symbol = 5
     mock_settings.max_daily_drawdown_percent = 2.0
     mock_settings.live_trading_enabled = False
     mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
@@ -126,6 +127,7 @@ def test_low_ai_risk_reward_is_allowed_when_other_checks_pass(mock_validate, moc
     mock_settings.effective_min_sl_pips = 30
     mock_settings.effective_max_sl_pips = 100
     mock_settings.max_open_positions = 1
+    mock_settings.max_positions_per_symbol = 5
     mock_settings.max_daily_drawdown_percent = 2.0
     mock_settings.live_trading_enabled = False
     mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
@@ -211,6 +213,7 @@ class TestEvaluateDecision:
         mock_settings.effective_min_confidence = 0.65
         mock_settings.effective_min_risk_reward = 1.5
         mock_settings.max_open_positions = 1
+        mock_settings.max_positions_per_symbol = 5
         mock_settings.max_daily_drawdown_percent = 2.0
         mock_settings.live_trading_enabled = False
         mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
@@ -231,6 +234,7 @@ class TestEvaluateDecision:
         mock_settings.effective_min_confidence = 0.65
         mock_settings.effective_min_risk_reward = 1.5
         mock_settings.max_open_positions = 1
+        mock_settings.max_positions_per_symbol = 5
         mock_settings.max_daily_drawdown_percent = 2.0
         mock_settings.live_trading_enabled = False
         mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
@@ -265,12 +269,58 @@ class TestEvaluateDecision:
 
     @patch("app.risk.risk_manager.settings")
     @patch("app.risk.trade_validator.validate_trade_params")
+    def test_max_positions_per_symbol_reached_rejected(self, mock_validate, mock_settings):
+        from app.risk.risk_manager import evaluate_decision
+
+        mock_settings.effective_min_confidence = 0.65
+        mock_settings.effective_min_risk_reward = 1.5
+        mock_settings.max_open_positions = 30
+        mock_settings.max_positions_per_symbol = 5
+        mock_settings.max_daily_drawdown_percent = 2.0
+        mock_settings.live_trading_enabled = False
+        mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
+
+        decision = _make_decision_mock()
+        context = _make_context(positions=10)
+        context["open_positions_count_symbol"] = 5
+
+        result = evaluate_decision(decision, context)
+
+        assert result["approved"] is False
+        assert result["checks"]["positions_per_symbol_ok"] is False
+        assert "XAUUSD positions (5) at or above per-symbol max (5)" in result["reason"]
+
+    @patch("app.risk.risk_manager.settings")
+    @patch("app.risk.trade_validator.validate_trade_params")
+    def test_symbol_cap_allows_when_global_count_is_higher_but_symbol_below_cap(self, mock_validate, mock_settings):
+        from app.risk.risk_manager import evaluate_decision
+
+        mock_settings.effective_min_confidence = 0.65
+        mock_settings.effective_min_risk_reward = 1.5
+        mock_settings.max_open_positions = 30
+        mock_settings.max_positions_per_symbol = 5
+        mock_settings.max_daily_drawdown_percent = 2.0
+        mock_settings.live_trading_enabled = False
+        mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
+
+        decision = _make_decision_mock()
+        context = _make_context(positions=10)
+        context["open_positions_count_symbol"] = 4
+
+        result = evaluate_decision(decision, context)
+
+        assert result["approved"] is True
+        assert result["checks"]["positions_per_symbol_ok"] is True
+
+    @patch("app.risk.risk_manager.settings")
+    @patch("app.risk.trade_validator.validate_trade_params")
     def test_drawdown_rejected(self, mock_validate, mock_settings):
         from app.risk.risk_manager import evaluate_decision
 
         mock_settings.effective_min_confidence = 0.65
         mock_settings.effective_min_risk_reward = 1.5
         mock_settings.max_open_positions = 1
+        mock_settings.max_positions_per_symbol = 5
         mock_settings.max_daily_drawdown_percent = 2.0
         mock_settings.live_trading_enabled = False
         mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
@@ -291,6 +341,7 @@ class TestEvaluateDecision:
         mock_settings.effective_min_confidence = 0.65
         mock_settings.effective_min_risk_reward = 1.5
         mock_settings.max_open_positions = 1
+        mock_settings.max_positions_per_symbol = 5
         mock_settings.max_daily_drawdown_percent = 2.0
         mock_settings.live_trading_enabled = False
         mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
@@ -311,6 +362,7 @@ class TestEvaluateDecision:
         mock_settings.effective_min_confidence = 0.65
         mock_settings.effective_min_risk_reward = 1.5
         mock_settings.max_open_positions = 1
+        mock_settings.max_positions_per_symbol = 5
         mock_settings.max_daily_drawdown_percent = 2.0
         mock_settings.live_trading_enabled = False
         mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
@@ -331,6 +383,7 @@ class TestEvaluateDecision:
         mock_settings.effective_min_confidence = 0.65
         mock_settings.effective_min_risk_reward = 1.5
         mock_settings.max_open_positions = 1
+        mock_settings.max_positions_per_symbol = 5
         mock_settings.max_daily_drawdown_percent = 2.0
         mock_settings.live_trading_enabled = False
         mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
@@ -352,6 +405,7 @@ class TestEvaluateDecision:
         mock_settings.effective_min_confidence = 0.65
         mock_settings.effective_min_risk_reward = 1.5
         mock_settings.max_open_positions = 1
+        mock_settings.max_positions_per_symbol = 5
         mock_settings.max_daily_drawdown_percent = 2.0
         mock_settings.live_trading_enabled = False
         mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
@@ -377,6 +431,7 @@ class TestEvaluateDecision:
         mock_settings.effective_min_confidence = 0.65
         mock_settings.effective_min_risk_reward = 1.5
         mock_settings.max_open_positions = 1
+        mock_settings.max_positions_per_symbol = 5
         mock_settings.max_daily_drawdown_percent = 2.0
         mock_settings.live_trading_enabled = False
         mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
@@ -418,6 +473,7 @@ class TestHighProfileAggressiveEntry:
         mock_settings.effective_min_sl_pips = 15
         mock_settings.effective_max_sl_pips = 80
         mock_settings.max_open_positions = 1
+        mock_settings.max_positions_per_symbol = 5
         mock_settings.max_daily_drawdown_percent = 2.0
         mock_settings.live_trading_enabled = False
         mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
@@ -445,6 +501,7 @@ class TestHighProfileAggressiveEntry:
         mock_settings.effective_min_sl_pips = 15
         mock_settings.effective_max_sl_pips = 80
         mock_settings.max_open_positions = 1
+        mock_settings.max_positions_per_symbol = 5
         mock_settings.max_daily_drawdown_percent = 2.0
         mock_settings.live_trading_enabled = False
         mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
@@ -473,6 +530,7 @@ class TestHighProfileAggressiveEntry:
         mock_settings.effective_min_sl_pips = 15
         mock_settings.effective_max_sl_pips = 80
         mock_settings.max_open_positions = 1
+        mock_settings.max_positions_per_symbol = 5
         mock_settings.max_daily_drawdown_percent = 2.0
         mock_settings.live_trading_enabled = False
         mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
@@ -496,6 +554,7 @@ class TestDirectionLockAndMajorTrend:
     def _settings(self, mock_settings):
         mock_settings.effective_min_confidence = 0.40
         mock_settings.max_open_positions = 99
+        mock_settings.max_positions_per_symbol = 5
         mock_settings.max_daily_drawdown_percent = 2.0
         mock_settings.live_trading_enabled = False
 
@@ -589,6 +648,7 @@ class TestDirectionLockAndMajorTrend:
         mock_settings.effective_min_sl_pips = 15
         mock_settings.effective_max_sl_pips = 80
         mock_settings.max_open_positions = 1
+        mock_settings.max_positions_per_symbol = 5
         mock_settings.max_daily_drawdown_percent = 2.0
         mock_settings.live_trading_enabled = False
         mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}

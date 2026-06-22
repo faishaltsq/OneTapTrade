@@ -3,10 +3,11 @@ import sys
 sys.path.insert(0, r'C:\Users\faishaltsq\Documents\Kerjaan\Things that i want to build\OneTapTrade')
 
 
-def test_strategy_mode_default_is_smc_ai():
+def test_strategy_mode_default_is_smc_ai(monkeypatch):
     from app.config import Settings
 
-    s = Settings()
+    monkeypatch.delenv("STRATEGY_MODE", raising=False)
+    s = Settings(_env_file=None)
     assert s.strategy_mode == "SMC_AI"
 
 

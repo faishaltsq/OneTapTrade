@@ -179,8 +179,56 @@ class TestBuildMarketPayload:
         assert ctx["balance"] is None
         assert ctx["has_open_position"] is False
 
-    def test_risk_config_present(self):
+    def test_account_context_preserves_symbol_position_state(self):
         df_m15 = _make_df(50)
+
+        result = build_market_payload(
+            symbol="XAUUSD",
+            df_d1=None,
+            df_h4=None,
+            df_h1=None,
+            df_m15=df_m15,
+            bid=2010.0,
+            ask=2010.5,
+            spread_points=5,
+            account_info={
+                "open_positions_count": 7,
+                "open_positions_count_symbol": 2,
+                "has_open_position": False,
+            },
+        )
+
+        ctx = result["account_context"]
+        assert ctx["open_positions_count"] == 7
+        assert ctx["open_positions_count_symbol"] == 2
+        assert ctx["has_open_position"] is False
+
+    def test_account_context_legacy_open_positions_sets_has_open_position(self):
+        df_m15 = _make_df(50)
+
+        result = build_market_payload(
+            symbol="XAUUSD",
+            df_d1=None,
+            df_h4=None,
+            df_h1=None,
+            df_m15=df_m15,
+            bid=2010.0,
+            ask=2010.5,
+            spread_points=5,
+            account_info={"open_positions_count": 3},
+        )
+
+        ctx = result["account_context"]
+        assert ctx["open_positions_count"] == 3
+        assert ctx["open_positions_count_symbol"] == 3
+        assert ctx["has_open_position"] is True
+
+    def test_risk_config_present(self, monkeypatch):
+        df_m15 = _make_df(50)
+        monkeypatch.setattr(
+            "app.analysis.feature_builder.settings.max_positions_per_symbol",
+            7,
+        )
 
         result = build_market_payload(
             symbol="XAUUSD",
@@ -197,6 +245,7 @@ class TestBuildMarketPayload:
         assert "risk_profile" in cfg
         assert "min_risk_reward" in cfg
         assert "max_open_positions" in cfg
+        assert cfg["max_positions_per_symbol"] == 7
 
     def test_major_trend_and_open_position_state_present(self, monkeypatch):
         df_d1 = _make_df(60)

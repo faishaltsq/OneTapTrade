@@ -22,6 +22,7 @@ def evaluate_decision(ai_decision, market_context: dict) -> dict:
             "risk_reward_ok": True,
             "sl_range_ok": True,
             "positions_ok": True,
+            "positions_per_symbol_ok": True,
             "position_direction_ok": True,
             "major_trend_ok": True,
             "drawdown_ok": True,
@@ -77,6 +78,15 @@ def evaluate_decision(ai_decision, market_context: dict) -> dict:
             return _reject(
                 checks,
                 f"Open positions ({open_positions_count}) at or above max ({settings.max_open_positions})",
+            )
+
+        open_positions_count_symbol = market_context.get("open_positions_count_symbol", 0)
+        if open_positions_count_symbol >= settings.max_positions_per_symbol:
+            checks["positions_per_symbol_ok"] = False
+            return _reject(
+                checks,
+                f"{market_context.get('symbol', 'UNKNOWN')} positions ({open_positions_count_symbol}) "
+                f"at or above per-symbol max ({settings.max_positions_per_symbol})",
             )
 
         daily_drawdown_percent = market_context.get("daily_drawdown_percent", 0.0)

@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     risk_per_trade_percent: float = 0.5
     max_daily_drawdown_percent: float = 2.0
     max_open_positions: int = 1
+    max_positions_per_symbol: int = 5
     min_confidence: float = 0.65
     min_risk_reward: float = 1.5
     max_spread_points: int = 35

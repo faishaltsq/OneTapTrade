@@ -63,6 +63,45 @@ def test_signal_message_uses_m5_entry_label():
     assert "M15" not in message
 
 
+@pytest.mark.asyncio
+async def test_send_trade_signal_stores_symbol_metadata_on_pending_decision():
+    from app.ai_engine.schemas import AIDecisionResponse, ConfidenceLabel, Decision, MarketRegime, TimeframeBias
+    from app.config import settings
+    from app.telegram_bot import bot as bot_module
+
+    decision = AIDecisionResponse(
+        decision=Decision.HOLD,
+        confidence=0.4,
+        confidence_label=ConfidenceLabel.MEDIUM,
+        market_regime=MarketRegime.RANGING,
+        higher_timeframe_bias=TimeframeBias.BULLISH,
+        entry_timeframe_bias=TimeframeBias.BEARISH,
+    )
+    original_token = settings.telegram_bot_token
+    original_chat_id = settings.telegram_allowed_chat_id
+    original_application = bot_module._application
+    bot_module._pending_decisions.clear()
+    bot_module._decision_symbols.clear()
+    try:
+        settings.telegram_bot_token = "token"
+        settings.telegram_allowed_chat_id = "123"
+        bot_module._application = MagicMock(bot=object())
+
+        with patch("app.telegram_bot.bot.format_signal_message", return_value="signal"):
+            with patch("app.telegram_bot.bot.send_message", new=AsyncMock(return_value=True)):
+                sent = await bot_module.send_trade_signal(decision, {"symbol": "EURUSD.c", "approved": True}, "decision-1")
+
+        assert sent is True
+        assert bot_module._pending_decisions["decision-1"] is decision
+        assert bot_module._decision_symbols["decision-1"] == "EURUSD.c"
+    finally:
+        bot_module._pending_decisions.clear()
+        bot_module._decision_symbols.clear()
+        bot_module._application = original_application
+        settings.telegram_bot_token = original_token
+        settings.telegram_allowed_chat_id = original_chat_id
+
+
 def _market_payload_fixture():
     return {
         "current_price": {"bid": 2432.10, "ask": 2432.45, "spread_points": 35},

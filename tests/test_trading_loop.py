@@ -23,7 +23,7 @@ async def test_approve_callback_uses_global_open_positions_for_max_entry(monkeyp
     monkeypatch.setattr("app.mt5_connector.account.get_daily_drawdown_percent", lambda: 0.0)
 
     def fake_open_positions_count(symbol=None):
-        return 1 if symbol is None else 0
+        return 1 if symbol is None else 4
 
     monkeypatch.setattr(
         "app.mt5_connector.positions.get_open_positions_count",
@@ -41,6 +41,8 @@ async def test_approve_callback_uses_global_open_positions_for_max_entry(monkeyp
 
     assert result["success"] is False
     assert captured_context["open_positions_count"] == 1
+    assert captured_context["open_positions_count_symbol"] == 4
+    assert captured_context["has_open_position"] is True
 
 
 @pytest.mark.asyncio

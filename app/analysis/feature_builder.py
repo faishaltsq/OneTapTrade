@@ -144,6 +144,7 @@ def build_market_payload(
         "daily_pnl_percent": None,
         "daily_drawdown_percent": None,
         "open_positions_count": 0,
+        "open_positions_count_symbol": 0,
         "has_open_position": False,
     }
 
@@ -153,13 +154,21 @@ def build_market_payload(
         account_context["daily_pnl_percent"] = account_info.get("daily_pnl_percent")
         account_context["daily_drawdown_percent"] = account_info.get("daily_drawdown_percent")
         account_context["open_positions_count"] = account_info.get("open_positions_count", 0)
-        account_context["has_open_position"] = bool(account_context["open_positions_count"])
+        account_context["open_positions_count_symbol"] = account_info.get(
+            "open_positions_count_symbol",
+            account_context["open_positions_count"],
+        )
+        account_context["has_open_position"] = account_info.get(
+            "has_open_position",
+            bool(account_context["open_positions_count_symbol"]),
+        )
 
     risk_config = {
         "risk_profile": settings.risk_profile,
         "risk_per_trade_percent": settings.risk_per_trade_percent,
         "min_risk_reward": settings.effective_min_risk_reward,
         "max_open_positions": settings.max_open_positions,
+        "max_positions_per_symbol": settings.max_positions_per_symbol,
         "max_daily_drawdown_percent": settings.max_daily_drawdown_percent,
         "min_confidence": settings.effective_min_confidence,
     }

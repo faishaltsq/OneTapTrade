@@ -79,11 +79,15 @@ async def generate_signal(request: Request):
         df_h1 = get_candles(symbol, "H1", 100)
         df_m15 = get_candles(symbol, "M5", 100)
 
+        open_positions_count = get_open_positions_count(None)
+        open_positions_count_symbol = get_open_positions_count(symbol)
         account_info = {
             "balance": get_balance(),
             "equity": get_equity(),
             "daily_drawdown_percent": get_daily_drawdown_percent(),
-            "open_positions_count": get_open_positions_count(symbol),
+            "open_positions_count": open_positions_count,
+            "open_positions_count_symbol": open_positions_count_symbol,
+            "has_open_position": open_positions_count_symbol > 0,
         }
 
         market_payload = build_market_payload(
@@ -109,6 +113,8 @@ async def generate_signal(request: Request):
             "current_ask": ask,
             "spread_points": spread_points,
             "open_positions_count": account_info.get("open_positions_count", 0),
+            "open_positions_count_symbol": account_info.get("open_positions_count_symbol", 0),
+            "has_open_position": open_positions_count_symbol > 0,
             "daily_drawdown_percent": account_info.get("daily_drawdown_percent", 0.0) or 0.0,
             "mode": settings.bot_mode,
             "point": symbol_info.get("point", 0.01),
@@ -163,7 +169,7 @@ async def generate_signal(request: Request):
 
 @router.post("/approve/{decision_id}")
 async def approve_signal(request: Request, decision_id: str):
-    from app.telegram_bot.bot import _pending_decisions, _trading_loop_ref
+    from app.telegram_bot.bot import _pending_decisions, _decision_symbols, _trading_loop_ref
 
     if decision_id not in _pending_decisions:
         raise HTTPException(status_code=404, detail="Decision not found or already expired")
@@ -176,9 +182,14 @@ async def approve_signal(request: Request, decision_id: str):
         from app.mt5_connector.positions import get_open_positions_count
         from app.mt5_connector.execution import build_order_request, send_order
 
-        symbol = settings.default_symbol
+        stored_decision = None
+        last_decisions = getattr(_trading_loop_ref, "_last_decisions", {}) if _trading_loop_ref else {}
+        if decision_id in last_decisions:
+            stored_decision = last_decisions[decision_id]
+        symbol = _decision_symbols.get(decision_id, (stored_decision or {}).get("symbol", settings.default_symbol))
         tick = get_latest_tick(symbol)
         if tick is None:
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             raise HTTPException(status_code=503, detail="Cannot fetch market data")
 
@@ -186,12 +197,16 @@ async def approve_signal(request: Request, decision_id: str):
         current_ask = tick.get("ask", 0.0)
         spread_points = get_spread(symbol) or 0
 
+        open_positions_count = get_open_positions_count(None)
+        open_positions_count_symbol = get_open_positions_count(symbol)
         market_context = {
             "symbol": symbol,
             "current_bid": current_bid,
             "current_ask": current_ask,
             "spread_points": spread_points,
-            "open_positions_count": get_open_positions_count(symbol),
+            "open_positions_count": open_positions_count,
+            "open_positions_count_symbol": open_positions_count_symbol,
+            "has_open_position": open_positions_count_symbol > 0,
             "daily_drawdown_percent": get_daily_drawdown_percent() or 0.0,
             "mode": settings.bot_mode,
         }
@@ -211,6 +226,7 @@ async def approve_signal(request: Request, decision_id: str):
 
         if not risk_result.get("approved"):
             reason = risk_result.get("reason", "Risk check failed")
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             return {"status": "rejected", "reason": reason}
 
@@ -232,6 +248,7 @@ async def approve_signal(request: Request, decision_id: str):
         balance = get_balance()
         sym_info = get_symbol_info(symbol)
         if balance is None or sym_info is None:
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             raise HTTPException(status_code=500, detail="Cannot fetch balance or symbol info")
 
@@ -240,6 +257,7 @@ async def approve_signal(request: Request, decision_id: str):
 
         sizing = calculate_lot_size(balance, sl_points, sym_info)
         if not sizing.get("is_valid"):
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             return {"status": "rejected", "reason": f"Position sizing failed: {sizing.get('reason')}"}
 
@@ -256,11 +274,13 @@ async def approve_signal(request: Request, decision_id: str):
 
         order_result = send_order(order_request)
         if order_result is None:
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             raise HTTPException(status_code=500, detail="Order send failed")
 
         retcode = order_result.get("retcode", -1)
         if retcode != 10009:
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             return {"status": "failed", "retcode": retcode, "comment": order_result.get("comment", "")}
 
@@ -283,15 +303,18 @@ async def approve_signal(request: Request, decision_id: str):
         }
         save_trade(trade_data)
 
+        _decision_symbols.pop(decision_id, None)
         _pending_decisions.pop(decision_id, None)
         logger.info(f"Trade executed via API approval: {decision_str} {symbol} ticket={ticket}")
 
         return {"status": "executed", "ticket": ticket, "lot": sizing["lot"], "price": order_price}
 
     except HTTPException:
+        _decision_symbols.pop(decision_id, None)
         _pending_decisions.pop(decision_id, None)
         raise
     except Exception as e:
+        _decision_symbols.pop(decision_id, None)
         _pending_decisions.pop(decision_id, None)
         logger.error(f"Error in API approve: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -299,11 +322,12 @@ async def approve_signal(request: Request, decision_id: str):
 
 @router.post("/reject/{decision_id}")
 async def reject_signal(request: Request, decision_id: str):
-    from app.telegram_bot.bot import _pending_decisions
+    from app.telegram_bot.bot import _pending_decisions, _decision_symbols
 
     if decision_id not in _pending_decisions:
         raise HTTPException(status_code=404, detail="Decision not found or already expired")
 
+    _decision_symbols.pop(decision_id, None)
     _pending_decisions.pop(decision_id, None)
 
     from app.database.repositories import log_bot_event

@@ -83,27 +83,39 @@ def test_system_prompt_includes_d1_and_position_lock_rules():
 
 def test_system_prompt_uses_ema50_ema200_and_rsi_25_75_thresholds():
     from app.ai_engine.prompt_builder import build_system_prompt
+    from app.config import settings
 
-    prompt = build_system_prompt()
+    original_mode = settings.strategy_mode
+    try:
+        settings.strategy_mode = "SMC_AI"
+        prompt = build_system_prompt()
 
-    assert "EMA50 above EMA200" in prompt
-    assert "EMA50 below EMA200" in prompt
-    assert ">75" in prompt
-    assert "<25" in prompt
-    assert ">70" not in prompt
-    assert "<30" not in prompt
+        assert "EMA50 above EMA200" in prompt
+        assert "EMA50 below EMA200" in prompt
+        assert ">75" in prompt
+        assert "<25" in prompt
+        assert ">70" not in prompt
+        assert "<30" not in prompt
+    finally:
+        settings.strategy_mode = original_mode
 
 
 def test_system_prompt_prefers_smc_limit_entries_and_restricts_market():
     from app.ai_engine.prompt_builder import build_system_prompt
+    from app.config import settings
 
-    prompt = build_system_prompt()
+    original_mode = settings.strategy_mode
+    try:
+        settings.strategy_mode = "SMC_AI"
+        prompt = build_system_prompt()
 
-    assert "Prefer LIMIT entries" in prompt
-    assert "BUY_LIMIT" in prompt and "demand order block" in prompt
-    assert "SELL_LIMIT" in prompt and "supply order block" in prompt
-    assert "MARKET only when confidence is above 50%" in prompt
-    assert "trend-following" in prompt
+        assert "Prefer LIMIT entries" in prompt
+        assert "BUY_LIMIT" in prompt and "demand order block" in prompt
+        assert "SELL_LIMIT" in prompt and "supply order block" in prompt
+        assert "MARKET only when confidence is above 50%" in prompt
+        assert "trend-following" in prompt
+    finally:
+        settings.strategy_mode = original_mode
 
 
 def test_smc_ai_prompt_contains_smc_keywords():

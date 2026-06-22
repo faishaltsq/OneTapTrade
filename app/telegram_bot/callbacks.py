@@ -7,7 +7,7 @@ from telegram.ext import CallbackQueryHandler, ContextTypes
 from app.config import settings
 from app.logger import logger
 from app.mt5_connector.positions import get_today_realized_pnl
-from app.telegram_bot.bot import _pending_decisions, get_trading_loop, send_main_menu, send_message
+from app.telegram_bot.bot import _pending_decisions, _decision_symbols, get_trading_loop, send_main_menu, send_message
 from app.telegram_bot.message_templates import build_main_menu_keyboard, build_settings_keyboard, format_settings_message
 
 
@@ -62,17 +62,19 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
         from app.mt5_connector.account import get_balance, get_daily_drawdown_percent
         from app.mt5_connector.positions import get_open_positions_count
 
-        symbol = settings.default_symbol
+        symbol = _decision_symbols.get(decision_id, settings.default_symbol)
         tick = get_latest_tick(symbol)
         if tick is None:
             await _edit_message(update, "<b>\u274c Cannot fetch market data. MT5 may be disconnected.</b>")
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             return
 
         current_bid = tick.get("bid", 0.0)
         current_ask = tick.get("ask", 0.0)
         spread_points = get_spread(symbol) or 0
-        open_positions_count = get_open_positions_count(symbol)
+        open_positions_count = get_open_positions_count(None)
+        open_positions_count_symbol = get_open_positions_count(symbol)
         daily_drawdown_percent = get_daily_drawdown_percent() or 0.0
 
         sym_info = get_symbol_info(symbol)
@@ -83,6 +85,8 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
             "current_ask": current_ask,
             "spread_points": spread_points,
             "open_positions_count": open_positions_count,
+            "open_positions_count_symbol": open_positions_count_symbol,
+            "has_open_position": open_positions_count_symbol > 0,
             "daily_drawdown_percent": daily_drawdown_percent,
             "mode": settings.bot_mode,
             "point": sym_info.get("point", 0.01) if sym_info else 0.01,
@@ -104,6 +108,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
         if not risk_result.get("approved"):
             reason = risk_result.get("reason", "Risk check failed")
             await _edit_message(update, f"<b>\u274c APPROVED but rejected by risk:</b>\n<i>{reason}</i>")
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             return
 
@@ -121,12 +126,14 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
         balance = get_balance()
         if balance is None:
             await _edit_message(update, "<b>\u274c Cannot fetch account balance.</b>")
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             return
 
         sym_info = get_symbol_info(symbol)
         if sym_info is None:
             await _edit_message(update, "<b>\u274c Cannot fetch symbol info.</b>")
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             return
 
@@ -136,6 +143,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
         sizing = calculate_lot_size(balance, sl_points, sym_info)
         if not sizing.get("is_valid"):
             await _edit_message(update, f"<b>\u274c Position sizing failed:</b> <i>{sizing.get('reason', 'Unknown')}</i>")
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             return
 
@@ -156,12 +164,14 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
 
         if not order_request:
             await _edit_message(update, "<b>\u274c Failed to build order request.</b>")
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             return
 
         check_result = check_order(order_request)
         if check_result is None:
             await _edit_message(update, "<b>\u274c Order check failed — returned None.</b>")
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             return
 
@@ -169,12 +179,14 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
         if retcode_check != 0:
             comment = check_result.get("comment", "Unknown error")
             await _edit_message(update, f"<b>\u274c Order check failed (retcode={retcode_check}):</b> <i>{comment}</i>")
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             return
 
         order_result = send_order(order_request)
         if order_result is None:
             await _edit_message(update, "<b>\u274c Order send failed. Check logs.</b>")
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             return
 
@@ -182,6 +194,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
         if retcode != 10009:
             comment = order_result.get("comment", "Unknown error")
             await _edit_message(update, f"<b>\u274c Order failed (retcode={retcode}):</b> <i>{comment}</i>")
+            _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
             return
 
