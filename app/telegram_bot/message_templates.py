@@ -539,7 +539,7 @@ def format_settings_message() -> str:
         f"<b>Risk/Trade:</b> {settings.risk_per_trade_percent}%\n"
         f"<b>Max Daily DD:</b> {settings.max_daily_drawdown_percent}%\n"
         f"<b>Max Positions:</b> {settings.max_open_positions}\n"
-        f"<b>Interval:</b> {settings.trading_loop_interval_seconds}s\n"
+        f"<b>Interval:</b> {settings.effective_loop_interval}s{' (auto)' if settings.trading_loop_interval_seconds == 0 else ''}\n"
         f"<b>Live Trading:</b> {_bool_emoji(settings.live_trading_enabled)}"
     )
 

@@ -58,6 +58,7 @@ Style affects:
 - AI system prompt (timeframe focus, hold time guidance, SL/TP ranges)
 - Noise filter strictness (LOW strict, MEDIUM lenient, HIGH very lenient)
 - Risk manager thresholds (min confidence, min R:R)
+- Trading loop interval (LOW=3600s, MEDIUM=900s, HIGH=300s; set `TRADING_LOOP_INTERVAL_SECONDS=0` for auto or non-zero to override)
 
 ## Noise Filter
 
@@ -210,7 +211,7 @@ API runs on `http://localhost:8000`.
 | `MIN_CONFIDENCE` | Legacy/base confidence config | `0.65` |
 | `MIN_RISK_REWARD` | Legacy/base risk reward config | `1.5` |
 | `MAX_SPREAD_POINTS` | Legacy spread config, not used as decision blocker | `35` |
-| `TRADING_LOOP_INTERVAL_SECONDS` | Loop interval | `300` |
+| `TRADING_LOOP_INTERVAL_SECONDS` | Loop interval (`0` = auto from profile: LOW=3600, MEDIUM=900, HIGH=300) | `0` |
 
 ## Broker Symbol Notes
 

@@ -108,6 +108,6 @@ class BotStatusService:
                 "min_confidence": settings.min_confidence,
                 "min_risk_reward": settings.min_risk_reward,
                 "max_spread_points": settings.max_spread_points,
-                "trading_loop_interval_seconds": settings.trading_loop_interval_seconds,
+                "trading_loop_interval_seconds": settings.effective_loop_interval,
                 "live_trading_enabled": settings.live_trading_enabled,
             }

@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     min_confidence: float = 0.65
     min_risk_reward: float = 1.5
     max_spread_points: int = 35
-    trading_loop_interval_seconds: int = 300
+    trading_loop_interval_seconds: int = 0
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
@@ -51,6 +51,7 @@ class Settings(BaseSettings):
                 "style": "SWING",
                 "entry_tf": ["H4", "D1"],
                 "hold": "days-weeks",
+                "loop_interval": 3600,
                 "min_confidence": 0.70,
                 "min_risk_reward": 2.5,
                 "sl_pips": (100, 500),
@@ -60,6 +61,7 @@ class Settings(BaseSettings):
                 "style": "DAYTRADE",
                 "entry_tf": ["H1", "H4"],
                 "hold": "hours-days",
+                "loop_interval": 900,
                 "min_confidence": 0.55,
                 "min_risk_reward": 1.8,
                 "sl_pips": (50, 150),
@@ -69,6 +71,7 @@ class Settings(BaseSettings):
                 "style": "SCALPING",
                 "entry_tf": ["M5", "M15"],
                 "hold": "minutes-hours",
+                "loop_interval": 300,
                 "min_confidence": 0.40,
                 "min_risk_reward": 1.2,
                 "sl_pips": (15, 50),
@@ -138,6 +141,12 @@ class Settings(BaseSettings):
     @property
     def effective_tp_pip_range(self) -> tuple[int, int]:
         return self.risk_profile_config["tp_pips"]
+
+    @property
+    def effective_loop_interval(self) -> int:
+        if self.trading_loop_interval_seconds > 0:
+            return self.trading_loop_interval_seconds
+        return self.risk_profile_config["loop_interval"]
 
 
 settings = Settings()

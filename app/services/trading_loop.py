@@ -9,7 +9,7 @@ class TradingLoop:
     def __init__(self):
         self._status_service = BotStatusService()
         self._running = False
-        self._interval = settings.trading_loop_interval_seconds
+        self._interval = settings.effective_loop_interval
         self._last_decision = None
         self._last_risk_result = None
         self._last_decisions = {}
@@ -399,4 +399,8 @@ class TradingLoop:
             except Exception as e:
                 logger.exception(f"Unhandled error in trading loop cycle: {e}")
 
+            current_interval = settings.effective_loop_interval
+            if current_interval != self._interval:
+                logger.info(f"Loop interval changed: {self._interval}s -> {current_interval}s (profile={settings.risk_profile})")
+                self._interval = current_interval
             await asyncio.sleep(self._interval)

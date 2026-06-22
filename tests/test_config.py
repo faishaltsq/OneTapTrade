@@ -78,3 +78,35 @@ def test_high_profile_maps_to_scalping():
         assert settings.effective_tp_pip_range == (15, 75)
     finally:
         settings.risk_profile = original
+
+
+def test_effective_loop_interval_auto_from_profile():
+    from app.config import settings
+
+    original_profile = settings.risk_profile
+    original_interval = settings.trading_loop_interval_seconds
+    try:
+        settings.trading_loop_interval_seconds = 0
+        settings.risk_profile = "LOW"
+        assert settings.effective_loop_interval == 3600
+        settings.risk_profile = "MEDIUM"
+        assert settings.effective_loop_interval == 900
+        settings.risk_profile = "HIGH"
+        assert settings.effective_loop_interval == 300
+    finally:
+        settings.risk_profile = original_profile
+        settings.trading_loop_interval_seconds = original_interval
+
+
+def test_effective_loop_interval_env_override_takes_precedence():
+    from app.config import settings
+
+    original_profile = settings.risk_profile
+    original_interval = settings.trading_loop_interval_seconds
+    try:
+        settings.risk_profile = "HIGH"
+        settings.trading_loop_interval_seconds = 120
+        assert settings.effective_loop_interval == 120
+    finally:
+        settings.risk_profile = original_profile
+        settings.trading_loop_interval_seconds = original_interval
