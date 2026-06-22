@@ -61,9 +61,16 @@ def update_bot_settings(updates: dict) -> dict | None:
             )
         except Exception as e:
             msg = str(e)
-            if "PGRST204" in msg and "risk_profile" in msg and "risk_profile" in filtered:
-                retry = {k: v for k, v in filtered.items() if k != "risk_profile"}
-                logger.warning("bot_settings.risk_profile missing in Supabase schema; applying remaining settings only")
+            stale_schema_fields = [
+                field for field in ("risk_profile", "strategy_mode")
+                if field in filtered and field in msg
+            ]
+            if "PGRST204" in msg and stale_schema_fields:
+                retry = {k: v for k, v in filtered.items() if k not in stale_schema_fields}
+                logger.warning(
+                    f"bot_settings schema cache missing {', '.join(stale_schema_fields)}; "
+                    "applying remaining settings only"
+                )
                 if not retry:
                     return None
                 result = (
