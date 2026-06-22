@@ -72,8 +72,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "<code>/status</code> - status bot dan akun\n"
         "<code>/positions</code> - posisi terbuka\n"
         "<code>/last_signal</code> - sinyal AI terakhir\n"
-        "<code>/pause</code> - pause trading loop\n"
-        "<code>/resume</code> - resume trading loop\n"
+        "<code>/pause</code> - Stop Trade (stop new trades)\n"
+        "<code>/resume</code> - Resume Trade\n"
         "<code>/settings</code> - konfigurasi aktif\n"
         "<code>/mode_signal</code> - signal only\n"
         "<code>/mode_semi</code> - semi-auto approval\n"
@@ -153,8 +153,8 @@ async def pause_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         try:
             await asyncio.to_thread(trading_loop.set_paused, True)
         except Exception as e:
-            logger.error(f"Failed to pause trading loop: {e}")
-            await _reply(update, "<b>\u274c Failed to pause trading loop</b>")
+            logger.error(f"Failed to activate Stop Trade: {e}")
+            await _reply(update, "<b>\u274c Failed to activate Stop Trade</b>")
             return
     else:
         from app.database.repositories import set_paused
@@ -163,8 +163,8 @@ async def pause_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     from app.database.repositories import log_telegram_command
 
     await asyncio.to_thread(log_telegram_command, settings.telegram_allowed_chat_id, "/pause", result="paused")
-    await _reply(update, "<b>\u23f8\ufe0f Trading loop paused.</b>")
-    logger.info("Trading loop paused via Telegram command")
+    await _reply(update, "<b>\U0001f6d1 Stop Trade active. New trades are stopped.</b>")
+    logger.info("Stop Trade activated via Telegram command")
 
 
 async def resume_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -177,8 +177,8 @@ async def resume_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         try:
             await asyncio.to_thread(trading_loop.set_paused, False)
         except Exception as e:
-            logger.error(f"Failed to resume trading loop: {e}")
-            await _reply(update, "<b>\u274c Failed to resume trading loop</b>")
+            logger.error(f"Failed to activate Resume Trade: {e}")
+            await _reply(update, "<b>\u274c Failed to activate Resume Trade</b>")
             return
     else:
         from app.database.repositories import set_paused
@@ -187,8 +187,8 @@ async def resume_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     from app.database.repositories import log_telegram_command
 
     await asyncio.to_thread(log_telegram_command, settings.telegram_allowed_chat_id, "/resume", result="resumed")
-    await _reply(update, "<b>\u25b6\ufe0f Trading loop resumed.</b>")
-    logger.info("Trading loop resumed via Telegram command")
+    await _reply(update, "<b>\u25b6\ufe0f Resume Trade active. New trades can continue.</b>")
+    logger.info("Resume Trade activated via Telegram command")
 
 
 async def mode_signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

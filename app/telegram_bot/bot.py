@@ -85,8 +85,8 @@ async def _set_bot_commands() -> None:
                 BotCommand("status", "Show bot status"),
                 BotCommand("positions", "Show open positions"),
                 BotCommand("last_signal", "Show latest AI signal"),
-                BotCommand("pause", "Pause trading loop"),
-                BotCommand("resume", "Resume trading loop"),
+                BotCommand("pause", "Stop new trades"),
+                BotCommand("resume", "Resume new trades"),
                 BotCommand("settings", "Show current settings"),
             ]
         )
@@ -208,7 +208,7 @@ async def send_main_menu(text: str = None) -> bool:
             pass
 
     sym_count = len(settings.symbols)
-    header = text or f"<b>\U0001f916 OneTapTrade Bot</b>\n<b>Pair:</b> {active} ({sym_count} pairs) | {mode} | {'\u23f8\ufe0f Paused' if paused else '\u25b6\ufe0f Running'}"
+    header = text or f"<b>\U0001f916 OneTapTrade Bot</b>\n<b>Pair:</b> {active} ({sym_count} pairs) | {mode} | {'\U0001f6d1 Stop Trade' if paused else '\u25b6\ufe0f Trading Running'}"
     return await send_message(header, reply_markup=build_main_menu_keyboard(is_paused=paused, mode=mode, active_symbol=active))
 
 

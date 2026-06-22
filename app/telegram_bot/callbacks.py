@@ -31,6 +31,21 @@ async def _edit_message(update: Update, text: str, reply_markup=None) -> None:
                 pass
 
 
+def _current_main_menu_keyboard():
+    paused = True
+    mode = settings.bot_mode
+    active = "ALL"
+    trading_loop = get_trading_loop()
+    if trading_loop is not None:
+        try:
+            paused = trading_loop.is_paused()
+            mode = trading_loop.status.mode
+            active = trading_loop.status.active_symbol
+        except Exception:
+            pass
+    return build_main_menu_keyboard(is_paused=paused, mode=mode, active_symbol=active)
+
+
 # ── Trade approval callbacks ──────────────────────────────────────────
 
 async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -341,7 +356,7 @@ async def menu_status_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             pass
 
     lines = ["<b>\U0001f4ca Bot Status</b>\n"]
-    lines.append(f"<b>Mode:</b> {mode} | {'\u23f8\ufe0f Paused' if paused else '\u25b6\ufe0f Running'}")
+    lines.append(f"<b>Mode:</b> {mode} | {'\U0001f6d1 Stopped' if paused else '\u25b6\ufe0f Trading Running'}")
     lines.append(f"<b>Symbol:</b> {settings.default_symbol}")
     if mt5_ok:
         balance = get_balance()
@@ -372,7 +387,7 @@ async def menu_positions_callback(update: Update, context: ContextTypes.DEFAULT_
     from app.mt5_connector.positions import get_open_positions
 
     if not is_mt5_connected():
-        await _edit_message(update, "<b>\u26a0\ufe0f MT5 not connected</b>", reply_markup=build_main_menu_keyboard())
+        await _edit_message(update, "<b>\u26a0\ufe0f MT5 not connected</b>", reply_markup=_current_main_menu_keyboard())
         return
 
     positions = get_open_positions(None)
@@ -380,7 +395,7 @@ async def menu_positions_callback(update: Update, context: ContextTypes.DEFAULT_
     from app.telegram_bot.message_templates import format_positions_message
 
     text = format_positions_message(positions, "ALL", realized_pnl=realized_pnl)
-    await _edit_message(update, text, reply_markup=build_main_menu_keyboard())
+    await _edit_message(update, text, reply_markup=_current_main_menu_keyboard())
 
 
 async def menu_last_signal_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -397,7 +412,7 @@ async def menu_last_signal_callback(update: Update, context: ContextTypes.DEFAUL
 
     latest = get_latest_decision(settings.default_symbol)
     if latest is None:
-        await _edit_message(update, "<b>\u2139\ufe0f No AI decisions found.</b>", reply_markup=build_main_menu_keyboard())
+        await _edit_message(update, "<b>\u2139\ufe0f No AI decisions found.</b>", reply_markup=_current_main_menu_keyboard())
         return
 
     decision_str = latest.get("decision", "N/A")
@@ -410,7 +425,7 @@ async def menu_last_signal_callback(update: Update, context: ContextTypes.DEFAUL
         f"{d_emoji} <b>{decision_str}</b> | {confidence:.0%}\n"
         f"<b>Time:</b> <i>{created_at}</i>"
     )
-    await _edit_message(update, text, reply_markup=build_main_menu_keyboard())
+    await _edit_message(update, text, reply_markup=_current_main_menu_keyboard())
 
 
 async def menu_settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -440,7 +455,7 @@ async def menu_toggle_pause_callback(update: Update, context: ContextTypes.DEFAU
         try:
             current = trading_loop.is_paused()
             trading_loop.set_paused(not current)
-            await query.answer(f"{'Paused' if not current else 'Resumed'}")
+            await query.answer("Stop Trade active" if not current else "Resume Trade active")
         except Exception:
             await query.answer("Failed", show_alert=True)
             return
@@ -497,12 +512,12 @@ async def menu_close_all_callback(update: Update, context: ContextTypes.DEFAULT_
     from app.mt5_connector.positions import get_open_positions
 
     if not is_mt5_connected():
-        await _edit_message(update, "<b>\u26a0\ufe0f MT5 not connected</b>", reply_markup=build_main_menu_keyboard())
+        await _edit_message(update, "<b>\u26a0\ufe0f MT5 not connected</b>", reply_markup=_current_main_menu_keyboard())
         return
 
     positions = get_open_positions(settings.default_symbol)
     if not positions:
-        await _edit_message(update, f"<b>\u2139\ufe0f No open positions for {settings.default_symbol}</b>", reply_markup=build_main_menu_keyboard())
+        await _edit_message(update, f"<b>\u2139\ufe0f No open positions for {settings.default_symbol}</b>", reply_markup=_current_main_menu_keyboard())
         return
 
     keyboard = [[InlineKeyboardButton("\u26a0\ufe0f Confirm Close All", callback_data="CLOSE_ALL_CONFIRM")]]

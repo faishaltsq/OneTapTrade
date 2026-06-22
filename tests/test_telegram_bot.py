@@ -25,6 +25,10 @@ def _keyboard_callback_data(markup) -> set[str]:
     return values
 
 
+def _keyboard_texts(markup) -> list[str]:
+    return [button.text for row in markup.inline_keyboard for button in row]
+
+
 def test_settings_keyboard_contains_risk_controls():
     from app.telegram_bot.message_templates import build_settings_keyboard
 
@@ -545,6 +549,82 @@ def test_main_menu_contains_strategy_toggle_buttons():
 
     assert "MENU_STRATEGY_SMC" in callbacks
     assert "MENU_STRATEGY_AI" in callbacks
+
+
+def test_main_menu_shows_stop_trade_when_running():
+    from app.telegram_bot.message_templates import build_main_menu_keyboard
+
+    texts = _keyboard_texts(build_main_menu_keyboard(is_paused=False))
+
+    assert "🛑 Stop Trade" in texts
+    assert "⏸️ Pause" not in texts
+
+
+def test_main_menu_shows_resume_trade_when_stopped():
+    from app.telegram_bot.message_templates import build_main_menu_keyboard
+
+    texts = _keyboard_texts(build_main_menu_keyboard(is_paused=True))
+
+    assert "▶️ Resume Trade" in texts
+    assert "▶️ Resume" not in texts
+
+
+def test_status_message_uses_stop_trade_wording():
+    from app.telegram_bot.message_templates import format_status_message
+
+    stopped = format_status_message({"paused": True, "mode": "AUTO_DEMO", "symbol": "XAUUSD"})
+    running = format_status_message({"paused": False, "mode": "AUTO_DEMO", "symbol": "XAUUSD"})
+
+    assert "TRADING STOPPED" in stopped
+    assert "TRADING PAUSED" not in stopped
+    assert "Trading Running" in running
+
+
+def test_welcome_message_uses_stop_trade_wording():
+    from app.telegram_bot.message_templates import format_welcome_message
+
+    message = format_welcome_message()
+
+    assert "/pause - Stop Trade" in message
+    assert "/resume - Resume Trade" in message
+    assert "Pause trading loop" not in message
+    assert "Resume trading loop" not in message
+
+
+def test_callback_menu_keyboard_uses_runtime_stopped_state():
+    from app.telegram_bot.callbacks import _current_main_menu_keyboard
+
+    loop = MagicMock()
+    loop.is_paused.return_value = False
+    loop.status.mode = "AUTO_DEMO"
+    loop.status.active_symbol = "ALL"
+
+    with patch("app.telegram_bot.callbacks.get_trading_loop", return_value=loop):
+        texts = _keyboard_texts(_current_main_menu_keyboard())
+
+    assert "🛑 Stop Trade" in texts
+    assert "▶️ Resume Trade" not in texts
+
+
+@pytest.mark.asyncio
+async def test_main_menu_header_uses_stop_trade_wording():
+    from app.telegram_bot import bot
+
+    original_loop = bot._trading_loop_ref
+    loop = MagicMock()
+    loop.is_paused.return_value = True
+    loop.status.mode = "AUTO_DEMO"
+    loop.status.active_symbol = "ALL"
+    try:
+        bot._trading_loop_ref = loop
+        with patch("app.telegram_bot.bot.send_message", new=AsyncMock(return_value=True)) as send_message:
+            await bot.send_main_menu()
+
+        header = send_message.await_args.args[0]
+        assert "🛑 Stop Trade" in header
+        assert "Paused" not in header
+    finally:
+        bot._trading_loop_ref = original_loop
 
 
 def test_main_menu_uses_runtime_strategy_mode_by_default():

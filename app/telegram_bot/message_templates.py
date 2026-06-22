@@ -29,7 +29,10 @@ def _bool_emoji(value: bool) -> str:
 def build_main_menu_keyboard(is_paused: bool = True, mode: str = "SIGNAL_ONLY", active_symbol: str = "ALL", strategy_mode: str | None = None) -> "InlineKeyboardMarkup":
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-    pause_btn = InlineKeyboardButton("\u25b6\ufe0f Resume" if is_paused else "\u23f8\ufe0f Pause", callback_data="MENU_TOGGLE_PAUSE")
+    pause_btn = InlineKeyboardButton(
+        "\u25b6\ufe0f Resume Trade" if is_paused else "\U0001f6d1 Stop Trade",
+        callback_data="MENU_TOGGLE_PAUSE",
+    )
     mode_label = {"SIGNAL_ONLY": "Signal", "SEMI_AUTO": "Semi-Auto", "AUTO_DEMO": "Auto Demo", "LIVE_AUTO": "Live"}.get(mode, mode)
     strategy_mode = strategy_mode or settings.strategy_mode
     smc_marker = " \u2705" if strategy_mode == "SMC_AI" else ""
@@ -107,8 +110,8 @@ def format_welcome_message() -> str:
         "/positions - Open positions\n"
         "/last_signal - Latest AI decision\n"
         "/settings - Risk settings\n"
-        "/pause - Pause trading loop\n"
-        "/resume - Resume trading loop\n"
+        "/pause - Stop Trade (stop new trades)\n"
+        "/resume - Resume Trade\n"
         "/mode_signal - Signal-only mode\n"
         "/mode_semi - Semi-auto mode\n"
         "/mode_demo_auto - Auto demo mode\n"
@@ -134,7 +137,9 @@ def format_status_message(status_data: dict) -> str:
     lines.append(f"<b>Symbol:</b> <code>{_escape_html(symbol)}</code>")
 
     if paused:
-        lines.append("\n\u23f8\ufe0f <b>TRADING PAUSED</b>")
+        lines.append("\n\U0001f6d1 <b>TRADING STOPPED</b>")
+    else:
+        lines.append("\n\u25b6\ufe0f <b>Trading Running</b>")
 
     if mt5_connected:
         lines.append(f"<b>Equity:</b> ${equity:,.2f}" if equity is not None else "<b>Equity:</b> N/A")
