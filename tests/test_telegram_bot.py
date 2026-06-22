@@ -508,6 +508,22 @@ def test_main_menu_contains_strategy_toggle_buttons():
     assert "MENU_STRATEGY_AI" in callbacks
 
 
+def test_main_menu_uses_runtime_strategy_mode_by_default():
+    from app.telegram_bot.message_templates import build_main_menu_keyboard
+    from app.config import settings
+
+    original_mode = settings.strategy_mode
+    try:
+        settings.strategy_mode = "AI_ONLY"
+        markup = build_main_menu_keyboard()
+        labels = [button.text for row in markup.inline_keyboard for button in row]
+
+        assert any("AI Only" in label and "\u2705" in label for label in labels)
+        assert all(not ("SMC+AI" in label and "\u2705" in label) for label in labels)
+    finally:
+        settings.strategy_mode = original_mode
+
+
 def test_settings_keyboard_contains_strategy_toggle_buttons():
     from app.telegram_bot.message_templates import build_settings_keyboard
 

@@ -26,11 +26,12 @@ def _bool_emoji(value: bool) -> str:
     return "\u2705" if value else "\u274c"
 
 
-def build_main_menu_keyboard(is_paused: bool = True, mode: str = "SIGNAL_ONLY", active_symbol: str = "ALL", strategy_mode: str = "SMC_AI") -> "InlineKeyboardMarkup":
+def build_main_menu_keyboard(is_paused: bool = True, mode: str = "SIGNAL_ONLY", active_symbol: str = "ALL", strategy_mode: str | None = None) -> "InlineKeyboardMarkup":
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     pause_btn = InlineKeyboardButton("\u25b6\ufe0f Resume" if is_paused else "\u23f8\ufe0f Pause", callback_data="MENU_TOGGLE_PAUSE")
     mode_label = {"SIGNAL_ONLY": "Signal", "SEMI_AUTO": "Semi-Auto", "AUTO_DEMO": "Auto Demo", "LIVE_AUTO": "Live"}.get(mode, mode)
+    strategy_mode = strategy_mode or settings.strategy_mode
     smc_marker = " \u2705" if strategy_mode == "SMC_AI" else ""
     ai_marker = " \u2705" if strategy_mode == "AI_ONLY" else ""
 
