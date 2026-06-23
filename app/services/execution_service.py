@@ -297,6 +297,16 @@ def execute_trade(
     order_price = order_result.get("price", entry_price)
     logger.info(f"Trade executed: ticket={ticket}, price={order_price}, lot={lot}")
 
+    if is_limit:
+        try:
+            from app.services.pending_order_manager import enforce_pending_order_cap
+
+            cap_result = enforce_pending_order_cap(sym, settings.max_positions_per_symbol)
+            if cap_result.get("cancelled", 0) > 0:
+                logger.info(f"Post-execution pending order cap: {cap_result}")
+        except Exception as e:
+            logger.debug(f"Post-execution cap enforcement skipped: {e}")
+
     logger.info("Step 9: Saving trade to DB...")
     trade_row = None
     try:

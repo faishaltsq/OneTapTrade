@@ -51,6 +51,17 @@ async def lifespan(app: FastAPI):
                     logger.info(f"Startup pending order sync complete: {pending_sync}")
                 except Exception as e:
                     logger.error(f"Startup pending order sync failed: {e}")
+
+                try:
+                    from app.services.pending_order_manager import validate_pending_orders_on_startup, validate_open_positions_on_startup
+
+                    pending_validation = validate_pending_orders_on_startup()
+                    logger.info(f"Startup pending order validation: {pending_validation}")
+
+                    position_validation = validate_open_positions_on_startup()
+                    logger.info(f"Startup open position validation: {position_validation}")
+                except Exception as e:
+                    logger.error(f"Startup order/position validation failed: {e}")
             else:
                 logger.warning("MT5 login failed — running without MT5")
         else:

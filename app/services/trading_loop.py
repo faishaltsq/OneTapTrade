@@ -81,6 +81,16 @@ class TradingLoop:
         except Exception as e:
             logger.error(f"Breakeven management failed: {e}")
 
+        try:
+            from app.services.pending_order_manager import enforce_pending_order_cap
+
+            for sym in symbols:
+                cap_result = await asyncio.to_thread(enforce_pending_order_cap, sym, settings.max_positions_per_symbol)
+                if cap_result.get("cancelled", 0) > 0:
+                    logger.info(f"Pending order cap enforced for {sym}: {cap_result}")
+        except Exception as e:
+            logger.error(f"Pending order cap enforcement failed: {e}")
+
         for symbol in symbols:
             result = await self._run_symbol(symbol)
             results.append(result)
