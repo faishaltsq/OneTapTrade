@@ -217,7 +217,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
             return
 
         ticket = order_result.get("order")
-        order_price = order_result.get("price", entry_price)
+        order_price = order_result.get("price") or entry_price
 
         from app.database.repositories import save_trade
 

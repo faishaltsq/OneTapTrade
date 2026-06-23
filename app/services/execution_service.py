@@ -294,7 +294,7 @@ def execute_trade(
         }
 
     ticket = order_result.get("order")
-    order_price = order_result.get("price", entry_price)
+    order_price = order_result.get("price") or entry_price
     logger.info(f"Trade executed: ticket={ticket}, price={order_price}, lot={lot}")
 
     if is_limit:

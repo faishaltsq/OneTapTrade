@@ -209,3 +209,50 @@ def test_pending_limit_placed_retcode_is_success(monkeypatch):
 
     assert result["success"] is True
     assert result["ticket"] == 777
+
+
+def test_pending_limit_price_zero_falls_back_to_entry_price(monkeypatch):
+    from app.services.execution_service import execute_trade
+
+    decision = SimpleNamespace(
+        decision="BUY",
+        confidence=0.7,
+        entry_plan=SimpleNamespace(
+            entry_type=SimpleNamespace(value="MARKET"),
+            preferred_entry_price=100.2,
+            stop_loss=98.0,
+            take_profit_1=102.0,
+        ),
+    )
+    payload = {
+        "major_trend": {"allowed_directions": ["BUY"]},
+        "primary_timeframe": {"market_structure": {"trend": "BULLISH"}},
+        "entry_timeframe": {"market_structure": {"trend": "BULLISH"}},
+        "smc": {
+            "order_blocks": {"demand": [{"low": 98.0, "high": 99.0, "index": 8}], "supply": []},
+            "choch": {"m5": {"bullish_choch": True}},
+        },
+    }
+    monkeypatch.setattr(
+        "app.risk.position_sizing.calculate_lot_size",
+        lambda account_balance, sl_points, symbol_info: {"is_valid": True, "lot": 0.01},
+    )
+    monkeypatch.setattr("app.mt5_connector.execution.build_order_request", lambda **kwargs: {"price": kwargs["price"]})
+    monkeypatch.setattr("app.mt5_connector.execution.check_order", lambda request: {"retcode": 0, "comment": "Done"})
+    monkeypatch.setattr("app.mt5_connector.execution.send_order", lambda request: {"retcode": 10008, "order": 888, "price": 0.0})
+    monkeypatch.setattr("app.database.repositories.save_trade", lambda trade_data: {"id": trade_data["id"]})
+    monkeypatch.setattr("app.database.repositories.log_bot_event", lambda **kwargs: None)
+
+    result = execute_trade(
+        decision,
+        {"symbol": "XAUUSD.c"},
+        {"point": 0.01, "digits": 2, "trade_stops_level": 0},
+        1000.0,
+        current_bid=100.0,
+        current_ask=100.2,
+        market_payload=payload,
+    )
+
+    assert result["success"] is True
+    assert result["price"] != 0.0
+    assert result["price"] == result["entry_price"]
