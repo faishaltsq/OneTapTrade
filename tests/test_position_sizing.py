@@ -123,3 +123,74 @@ class TestValidatePositionSizing:
 
         assert result["is_valid"] is True
         assert result["lot"] == 0.15
+
+
+class TestConfidenceZoneScaling:
+
+    def test_high_confidence_high_zone_uses_full_risk(self):
+        from app.config import settings
+        base = settings.risk_per_trade_percent
+        sym = _make_symbol_info()
+        result = calculate_lot_size(
+            account_balance=10000.0,
+            stop_loss_distance_points=100.0,
+            symbol_info=sym,
+            confidence=0.80,
+            zone_quality="HIGH",
+        )
+        assert result["is_valid"] is True
+        assert abs(result["effective_risk_percent"] - base) < 0.001
+
+    def test_medium_confidence_medium_zone_scales_down(self):
+        from app.config import settings
+        base = settings.risk_per_trade_percent
+        sym = _make_symbol_info()
+        result = calculate_lot_size(
+            account_balance=10000.0,
+            stop_loss_distance_points=100.0,
+            symbol_info=sym,
+            confidence=0.60,
+            zone_quality="MEDIUM",
+        )
+        assert result["is_valid"] is True
+        assert abs(result["effective_risk_percent"] - base * 0.75 * 0.75) < 0.001
+
+    def test_low_confidence_low_zone_scales_heavily(self):
+        from app.config import settings
+        base = settings.risk_per_trade_percent
+        sym = _make_symbol_info()
+        result = calculate_lot_size(
+            account_balance=10000.0,
+            stop_loss_distance_points=100.0,
+            symbol_info=sym,
+            confidence=0.45,
+            zone_quality="LOW",
+        )
+        assert result["is_valid"] is True
+        assert abs(result["effective_risk_percent"] - base * 0.50 * 0.50) < 0.001
+
+    def test_market_order_zone_none_uses_neutral_factor(self):
+        from app.config import settings
+        base = settings.risk_per_trade_percent
+        sym = _make_symbol_info()
+        result = calculate_lot_size(
+            account_balance=10000.0,
+            stop_loss_distance_points=100.0,
+            symbol_info=sym,
+            confidence=0.80,
+            zone_quality=None,
+        )
+        assert result["is_valid"] is True
+        assert abs(result["effective_risk_percent"] - base * 1.0 * 0.75) < 0.001
+
+    def test_no_confidence_no_zone_uses_base_risk(self):
+        from app.config import settings
+        base = settings.risk_per_trade_percent
+        sym = _make_symbol_info()
+        result = calculate_lot_size(
+            account_balance=10000.0,
+            stop_loss_distance_points=100.0,
+            symbol_info=sym,
+        )
+        assert result["is_valid"] is True
+        assert abs(result["effective_risk_percent"] - base) < 0.001

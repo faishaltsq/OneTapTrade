@@ -49,7 +49,7 @@ def test_market_sell_uses_current_bid_as_order_price(monkeypatch):
 
     monkeypatch.setattr(
         "app.risk.position_sizing.calculate_lot_size",
-        lambda account_balance, sl_points, symbol_info: {"is_valid": True, "lot": 0.01},
+        lambda account_balance, sl_points, symbol_info, **kwargs: {"is_valid": True, "lot": 0.01},
     )
 
     def fake_build_order_request(**kwargs):
@@ -103,7 +103,7 @@ def test_valid_smc_demand_zone_converts_buy_to_limit(monkeypatch):
 
     monkeypatch.setattr(
         "app.risk.position_sizing.calculate_lot_size",
-        lambda account_balance, sl_points, symbol_info: {"is_valid": True, "lot": 0.01},
+        lambda account_balance, sl_points, symbol_info, **kwargs: {"is_valid": True, "lot": 0.01},
     )
 
     def fake_build_order_request(**kwargs):
@@ -189,7 +189,7 @@ def test_pending_limit_placed_retcode_is_success(monkeypatch):
     }
     monkeypatch.setattr(
         "app.risk.position_sizing.calculate_lot_size",
-        lambda account_balance, sl_points, symbol_info: {"is_valid": True, "lot": 0.01},
+        lambda account_balance, sl_points, symbol_info, **kwargs: {"is_valid": True, "lot": 0.01},
     )
     monkeypatch.setattr("app.mt5_connector.execution.build_order_request", lambda **kwargs: {"price": kwargs["price"]})
     monkeypatch.setattr("app.mt5_connector.execution.check_order", lambda request: {"retcode": 0, "comment": "Done"})
@@ -235,7 +235,7 @@ def test_pending_limit_price_zero_falls_back_to_entry_price(monkeypatch):
     }
     monkeypatch.setattr(
         "app.risk.position_sizing.calculate_lot_size",
-        lambda account_balance, sl_points, symbol_info: {"is_valid": True, "lot": 0.01},
+        lambda account_balance, sl_points, symbol_info, **kwargs: {"is_valid": True, "lot": 0.01},
     )
     monkeypatch.setattr("app.mt5_connector.execution.build_order_request", lambda **kwargs: {"price": kwargs["price"]})
     monkeypatch.setattr("app.mt5_connector.execution.check_order", lambda request: {"retcode": 0, "comment": "Done"})
@@ -286,7 +286,7 @@ def test_near_third_buy_limit_caps_tp_at_2x_sl(monkeypatch):
 
     monkeypatch.setattr(
         "app.risk.position_sizing.calculate_lot_size",
-        lambda account_balance, sl_points, symbol_info: {"is_valid": True, "lot": 0.01},
+        lambda account_balance, sl_points, symbol_info, **kwargs: {"is_valid": True, "lot": 0.01},
     )
 
     def fake_build(**kwargs):
@@ -345,7 +345,7 @@ def test_middle_third_buy_limit_keeps_ai_tp(monkeypatch):
 
     monkeypatch.setattr(
         "app.risk.position_sizing.calculate_lot_size",
-        lambda account_balance, sl_points, symbol_info: {"is_valid": True, "lot": 0.01},
+        lambda account_balance, sl_points, symbol_info, **kwargs: {"is_valid": True, "lot": 0.01},
     )
 
     def fake_build(**kwargs):
@@ -401,7 +401,7 @@ def test_near_third_rejects_smc_target_below_min_rr(monkeypatch):
 
     monkeypatch.setattr(
         "app.risk.position_sizing.calculate_lot_size",
-        lambda account_balance, sl_points, symbol_info: {"is_valid": True, "lot": 0.01},
+        lambda account_balance, sl_points, symbol_info, **kwargs: {"is_valid": True, "lot": 0.01},
     )
 
     def fake_build(**kwargs):

@@ -105,7 +105,16 @@ def execute_trade(
     try:
         from app.risk.position_sizing import calculate_lot_size
 
-        sizing = calculate_lot_size(account_balance, sl_points, symbol_info)
+        confidence = float(getattr(ai_decision, "confidence", 0.0) or 0.0)
+        zone_quality = smc_entry.get("quality") if smc_entry else None
+
+        sizing = calculate_lot_size(
+            account_balance,
+            sl_points,
+            symbol_info,
+            confidence=confidence,
+            zone_quality=zone_quality,
+        )
     except Exception as e:
         logger.error(f"Lot size calculation failed: {e}")
         return {"success": False, "error": f"Lot size calculation failed: {e}"}

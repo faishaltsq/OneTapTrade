@@ -3,12 +3,42 @@ from app.config import settings
 from app.logger import logger
 
 
+def _confidence_factor(confidence: float | None) -> float:
+    if confidence is None:
+        return 1.0
+    if confidence > 0.70:
+        return 1.0
+    if confidence >= 0.50:
+        return 0.75
+    return 0.50
+
+
+def _zone_factor(zone_quality: str | None) -> float:
+    if zone_quality is None:
+        return 0.75
+    q = str(zone_quality).upper()
+    if q == "HIGH":
+        return 1.0
+    if q == "MEDIUM":
+        return 0.75
+    return 0.50
+
+
 def calculate_lot_size(
     account_balance: float,
     stop_loss_distance_points: float,
     symbol_info: dict,
+    confidence: float | None = None,
+    zone_quality: str | None = None,
 ) -> dict:
-    risk_amount = account_balance * (settings.risk_per_trade_percent / 100.0)
+    base_risk_percent = settings.risk_per_trade_percent
+
+    if confidence is None and zone_quality is None:
+        effective_risk_percent = base_risk_percent
+    else:
+        effective_risk_percent = base_risk_percent * _confidence_factor(confidence) * _zone_factor(zone_quality)
+
+    risk_amount = account_balance * (effective_risk_percent / 100.0)
     pip_value = symbol_info.get("trade_tick_value", 1)
 
     if stop_loss_distance_points <= 0:
@@ -56,6 +86,7 @@ def calculate_lot_size(
         "pip_value": pip_value,
         "is_valid": True,
         "reason": f"Calculated lot size: {lot}",
+        "effective_risk_percent": round(effective_risk_percent, 4),
     }
 
 
