@@ -747,3 +747,60 @@ def test_get_callback_handlers_includes_strategy_handlers():
 
     assert any("MENU_STRATEGY_SMC" in p for p in patterns)
     assert any("MENU_STRATEGY_AI" in p for p in patterns)
+
+
+def test_pending_and_close_pending_commands_registered():
+    from app.telegram_bot.commands import get_command_handlers
+
+    commands = set()
+    for handler in get_command_handlers():
+        commands.update(handler.commands)
+
+    assert "pending" in commands
+    assert "close_pending" in commands
+
+
+def test_main_menu_has_pending_and_close_pending_buttons():
+    from app.telegram_bot.message_templates import build_main_menu_keyboard
+
+    callbacks = _keyboard_callback_data(build_main_menu_keyboard())
+
+    assert "MENU_PENDING" in callbacks
+    assert "MENU_CLOSE_PENDING" in callbacks
+
+
+def test_callback_handlers_include_pending_handlers():
+    from app.telegram_bot.callbacks import get_callback_handlers
+
+    patterns = []
+    for handler in get_callback_handlers():
+        if hasattr(handler, "pattern"):
+            patterns.append(str(handler.pattern))
+
+    assert any("MENU_PENDING" in p for p in patterns)
+    assert any("MENU_CLOSE_PENDING" in p for p in patterns)
+    assert any("CLOSE_PENDING_CONFIRM" in p for p in patterns)
+
+
+def test_format_pending_orders_empty():
+    from app.telegram_bot.message_templates import format_pending_orders_message
+
+    text = format_pending_orders_message([])
+
+    assert "No pending orders" in text
+
+
+def test_format_pending_orders_with_orders():
+    from app.telegram_bot.message_templates import format_pending_orders_message
+
+    orders = [
+        {"ticket": 101, "symbol": "XAUUSD.c", "type": 2, "price_open": 1980.0, "sl": 1970.0, "tp": 2000.0, "volume": 0.01},
+        {"ticket": 102, "symbol": "EURUSD.c", "type": 3, "price_open": 1.0850, "sl": 1.0900, "tp": 1.0750, "volume": 0.05},
+    ]
+    text = format_pending_orders_message(orders)
+
+    assert "2 order(s)" in text
+    assert "101" in text
+    assert "102" in text
+    assert "XAUUSD.c" in text
+    assert "EURUSD.c" in text

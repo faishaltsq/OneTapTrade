@@ -92,3 +92,23 @@ def cancel_pending_orders_for_symbol(symbol: str, new_direction: str) -> dict:
         logger.error(f"cancel_pending_orders_for_symbol exception: {e}")
         summary["errors"] += 1
     return summary
+
+
+def cancel_all_pending_orders(symbol: Optional[str] = None) -> dict:
+    summary = {"cancelled": 0, "errors": 0, "total": 0}
+    try:
+        orders = get_pending_orders(symbol)
+        summary["total"] = len(orders)
+        for order in orders:
+            ticket = order.get("ticket")
+            if cancel_pending_order(ticket):
+                summary["cancelled"] += 1
+            else:
+                summary["errors"] += 1
+        if summary["cancelled"] > 0:
+            label = symbol or "all pairs"
+            logger.info(f"Cancelled {summary['cancelled']} pending orders for {label}")
+    except Exception as e:
+        logger.error(f"cancel_all_pending_orders exception: {e}")
+        summary["errors"] += 1
+    return summary

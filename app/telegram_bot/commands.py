@@ -8,6 +8,7 @@ from app.logger import logger
 from app.telegram_bot.bot import get_trading_loop, send_main_menu
 from app.telegram_bot.message_templates import (
     build_settings_keyboard,
+    format_pending_orders_message,
     format_positions_message,
     format_settings_message,
     format_status_message,
@@ -352,6 +353,61 @@ async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _reply(update, "<b>Command tidak dikenal.</b> Pakai <code>/help</code> atau <code>/menu</code>.")
 
 
+async def pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _check_allowed(update):
+        await _reply(update, "<b>\u26a0\ufe0f Unauthorized</b>")
+        return
+
+    if not await asyncio.to_thread(is_mt5_connected):
+        await _reply(update, "<b>\u26a0\ufe0f MT5 not connected</b>")
+        return
+
+    from app.mt5_connector.orders import get_pending_orders
+
+    orders = await asyncio.to_thread(get_pending_orders, None)
+    await _reply(update, format_pending_orders_message(orders))
+
+
+async def close_pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _check_allowed(update):
+        await _reply(update, "<b>\u26a0\ufe0f Unauthorized</b>")
+        return
+
+    if not await asyncio.to_thread(is_mt5_connected):
+        await _reply(update, "<b>\u26a0\ufe0f MT5 not connected</b>")
+        return
+
+    from app.mt5_connector.orders import get_pending_orders
+
+    orders = await asyncio.to_thread(get_pending_orders, None)
+    if not orders:
+        await _reply(update, "<b>\u2139\ufe0f No pending orders to close.</b>")
+        return
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "\u26a0\ufe0f Confirm Close All Pending",
+                callback_data="CLOSE_PENDING_CONFIRM",
+            )
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    count = len(orders)
+    await _reply(
+        update,
+        f"<b>\u26a0\ufe0f Close all {count} pending order(s)?</b>\n\n"
+        "<i>Click the button below to confirm.</i>",
+    )
+    if update.message:
+        await update.message.reply_text(
+            f"<b>Confirm close {count} pending order(s)?</b>",
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+        )
+
+
 def get_command_handlers() -> list:
     return [
         CommandHandler("start", start_command),
@@ -365,6 +421,8 @@ def get_command_handlers() -> list:
         CommandHandler("mode_demo_auto", mode_demo_auto_command),
         CommandHandler("positions", positions_command),
         CommandHandler("close_all", close_all_command),
+        CommandHandler("pending", pending_command),
+        CommandHandler("close_pending", close_pending_command),
         CommandHandler("last_signal", last_signal_command),
         CommandHandler("settings", settings_command),
     ]

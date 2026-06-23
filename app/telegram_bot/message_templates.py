@@ -44,6 +44,10 @@ def build_main_menu_keyboard(is_paused: bool = True, mode: str = "SIGNAL_ONLY", 
             InlineKeyboardButton("\U0001f4cb Positions", callback_data="MENU_POSITIONS"),
         ],
         [
+            InlineKeyboardButton("\U0001f4dd Pending", callback_data="MENU_PENDING"),
+            InlineKeyboardButton("\u274c Close Pending", callback_data="MENU_CLOSE_PENDING"),
+        ],
+        [
             InlineKeyboardButton("\U0001f4e1 Last Signal", callback_data="MENU_LAST_SIGNAL"),
             InlineKeyboardButton("\u2699\ufe0f Settings", callback_data="MENU_SETTINGS"),
         ],
@@ -99,6 +103,44 @@ def build_settings_keyboard() -> "InlineKeyboardMarkup":
         [InlineKeyboardButton("⬅️ Back/Menu", callback_data="MENU_BACK")],
     ]
     return InlineKeyboardMarkup(keyboard)
+
+
+def format_pending_orders_message(orders: list) -> str:
+    if not orders:
+        return "<b>\U0001f4dd Pending Orders</b>\n\n<i>No pending orders.</i>"
+
+    lines = [f"<b>\U0001f4dd Pending Orders — {len(orders)} order(s)</b>\n"]
+
+    for order in orders:
+        ticket = order.get("ticket", "?")
+        symbol = order.get("symbol", "?")
+        order_type = int(order.get("type", 0))
+        price = order.get("price_open", 0)
+        sl = order.get("sl", 0)
+        tp = order.get("tp", 0)
+        volume = order.get("volume", 0)
+
+        try:
+            import MetaTrader5 as mt5
+            if order_type in (mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP):
+                side = "BUY"
+                emoji = "\U0001f7e2"
+            elif order_type in (mt5.ORDER_TYPE_SELL_LIMIT, mt5.ORDER_TYPE_SELL_STOP):
+                side = "SELL"
+                emoji = "\U0001f534"
+            else:
+                side = "?"
+                emoji = "\u26aa"
+        except Exception:
+            side = "?"
+            emoji = "\u26aa"
+
+        lines.append(
+            f"{emoji} <b>#{ticket}</b> {side} <code>{symbol}</code> | Lot: {volume} | "
+            f"Price: {price} | SL: {sl} | TP: {tp}"
+        )
+
+    return "\n".join(lines)
 
 
 def format_welcome_message() -> str:

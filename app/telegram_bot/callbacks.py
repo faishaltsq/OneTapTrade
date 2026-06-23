@@ -531,6 +531,86 @@ async def menu_close_all_callback(update: Update, context: ContextTypes.DEFAULT_
     )
 
 
+async def menu_pending_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    chat_id = str(update.effective_chat.id) if update.effective_chat else ""
+    if chat_id != settings.telegram_allowed_chat_id:
+        await query.answer("Unauthorized", show_alert=True)
+        return
+
+    await query.answer()
+    from app.mt5_connector.connection import is_mt5_connected
+    from app.mt5_connector.orders import get_pending_orders
+    from app.telegram_bot.message_templates import format_pending_orders_message
+
+    if not is_mt5_connected():
+        await _edit_message(update, "<b>\u26a0\ufe0f MT5 not connected</b>", reply_markup=_current_main_menu_keyboard())
+        return
+
+    orders = get_pending_orders(None)
+    text = format_pending_orders_message(orders)
+    await _edit_message(update, text, reply_markup=_current_main_menu_keyboard())
+
+
+async def menu_close_pending_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    chat_id = str(update.effective_chat.id) if update.effective_chat else ""
+    if chat_id != settings.telegram_allowed_chat_id:
+        await query.answer("Unauthorized", show_alert=True)
+        return
+
+    await query.answer()
+    from app.mt5_connector.connection import is_mt5_connected
+    from app.mt5_connector.orders import get_pending_orders
+
+    if not is_mt5_connected():
+        await _edit_message(update, "<b>\u26a0\ufe0f MT5 not connected</b>", reply_markup=_current_main_menu_keyboard())
+        return
+
+    orders = get_pending_orders(None)
+    if not orders:
+        await _edit_message(update, "<b>\u2139\ufe0f No pending orders to close.</b>", reply_markup=_current_main_menu_keyboard())
+        return
+
+    keyboard = [[InlineKeyboardButton("\u26a0\ufe0f Confirm Close All Pending", callback_data="CLOSE_PENDING_CONFIRM")]]
+    await _edit_message(
+        update,
+        f"<b>\u26a0\ufe0f Close all {len(orders)} pending order(s)?</b>",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def close_pending_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    chat_id = str(update.effective_chat.id) if update.effective_chat else ""
+    if chat_id != settings.telegram_allowed_chat_id:
+        await query.answer("Unauthorized", show_alert=True)
+        return
+
+    await query.answer("Cancelling all pending orders...")
+    from app.mt5_connector.connection import is_mt5_connected
+    from app.mt5_connector.orders import cancel_all_pending_orders
+
+    if not is_mt5_connected():
+        await _edit_message(update, "<b>\u26a0\ufe0f MT5 not connected</b>", reply_markup=_current_main_menu_keyboard())
+        return
+
+    result = cancel_all_pending_orders(None)
+    text = (
+        f"<b>\u2705 Pending Orders Closed</b>\n\n"
+        f"<b>Cancelled:</b> {result['cancelled']}\n"
+        f"<b>Errors:</b> {result['errors']}\n"
+        f"<b>Total:</b> {result['total']}"
+    )
+    await _edit_message(update, text, reply_markup=_current_main_menu_keyboard())
+
+
 async def menu_risk_callback(update: Update, profile: str) -> None:
     query = update.callback_query
     if query is None:
@@ -678,6 +758,9 @@ def get_callback_handlers() -> list:
         CallbackQueryHandler(menu_mode_semi_cb, pattern=r"^MENU_MODE_SEMI$"),
         CallbackQueryHandler(menu_mode_auto_cb, pattern=r"^MENU_MODE_AUTO$"),
         CallbackQueryHandler(menu_close_all_callback, pattern=r"^MENU_CLOSE_ALL$"),
+        CallbackQueryHandler(menu_pending_callback, pattern=r"^MENU_PENDING$"),
+        CallbackQueryHandler(menu_close_pending_callback, pattern=r"^MENU_CLOSE_PENDING$"),
+        CallbackQueryHandler(close_pending_confirm_callback, pattern=r"^CLOSE_PENDING_CONFIRM$"),
         CallbackQueryHandler(menu_risk_low_cb, pattern=r"^MENU_RISK_LOW$"),
         CallbackQueryHandler(menu_risk_medium_cb, pattern=r"^MENU_RISK_MEDIUM$"),
         CallbackQueryHandler(menu_risk_high_cb, pattern=r"^MENU_RISK_HIGH$"),
