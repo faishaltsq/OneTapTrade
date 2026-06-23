@@ -288,7 +288,7 @@ class TestEvaluateDecision:
 
         assert result["approved"] is False
         assert result["checks"]["positions_per_symbol_ok"] is False
-        assert "XAUUSD positions (5) at or above per-symbol max (5)" in result["reason"]
+        assert "XAUUSD orders (5) at or above per-symbol max (5)" in result["reason"]
 
     @patch("app.risk.risk_manager.settings")
     @patch("app.risk.trade_validator.validate_trade_params")
@@ -443,6 +443,50 @@ class TestEvaluateDecision:
 
         assert result["approved"] is False
         assert result["checks"]["live_mode_allowed"] is False
+
+    @patch("app.risk.risk_manager.settings")
+    @patch("app.risk.trade_validator.validate_trade_params")
+    def test_cap_rejects_when_active_plus_pending_exceeds_max(self, mock_validate, mock_settings):
+        from app.risk.risk_manager import evaluate_decision
+
+        mock_settings.effective_min_confidence = 0.65
+        mock_settings.effective_min_risk_reward = 1.5
+        mock_settings.max_open_positions = 30
+        mock_settings.max_positions_per_symbol = 5
+        mock_settings.max_daily_drawdown_percent = 2.0
+        mock_settings.live_trading_enabled = False
+        mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
+
+        decision = _make_decision_mock()
+        context = _make_context(positions=10)
+        context["open_orders_count_symbol"] = 5
+
+        result = evaluate_decision(decision, context)
+
+        assert result["approved"] is False
+        assert result["checks"]["positions_per_symbol_ok"] is False
+
+    @patch("app.risk.risk_manager.settings")
+    @patch("app.risk.trade_validator.validate_trade_params")
+    def test_cap_allows_when_combined_count_below_max(self, mock_validate, mock_settings):
+        from app.risk.risk_manager import evaluate_decision
+
+        mock_settings.effective_min_confidence = 0.65
+        mock_settings.effective_min_risk_reward = 1.5
+        mock_settings.max_open_positions = 30
+        mock_settings.max_positions_per_symbol = 5
+        mock_settings.max_daily_drawdown_percent = 2.0
+        mock_settings.live_trading_enabled = False
+        mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
+
+        decision = _make_decision_mock()
+        context = _make_context(positions=10)
+        context["open_orders_count_symbol"] = 4
+
+        result = evaluate_decision(decision, context)
+
+        assert result["approved"] is True
+        assert result["checks"]["positions_per_symbol_ok"] is True
 
 
 def test_high_profile_thresholds_are_aggressive():

@@ -4,6 +4,7 @@ from uuid import uuid4
 from app.logger import logger
 
 _OPEN_POSITION_STATE: dict[str, list[dict]] = {}
+_PENDING_ORDER_STATE: dict[str, list[dict]] = {}
 
 
 def _side_from_position_type(position_type) -> str:
@@ -91,4 +92,39 @@ def sync_open_positions_from_mt5() -> dict:
             summary["errors"] += 1
 
     logger.info(f"Startup position sync: {summary}")
+    return summary
+
+
+def sync_pending_orders_from_mt5() -> dict:
+    summary = {"pending_orders": 0, "errors": 0}
+    _PENDING_ORDER_STATE.clear()
+
+    try:
+        from app.mt5_connector.orders import get_pending_orders
+
+        orders = get_pending_orders(None)
+        summary["pending_orders"] = len(orders)
+    except Exception as e:
+        logger.error(f"Failed to read MT5 pending orders during startup sync: {e}")
+        summary["errors"] += 1
+        return summary
+
+    for order in orders:
+        try:
+            symbol = order.get("symbol")
+            ticket = order.get("ticket")
+            state = {
+                "symbol": symbol,
+                "ticket": ticket,
+                "volume": order.get("volume"),
+                "price_open": order.get("price_open"),
+                "sl": order.get("sl"),
+                "tp": order.get("tp"),
+            }
+            _PENDING_ORDER_STATE.setdefault(symbol, []).append(state)
+        except Exception as e:
+            logger.error(f"Failed to sync pending order state: {e}")
+            summary["errors"] += 1
+
+    logger.info(f"Startup pending order sync: {summary}")
     return summary

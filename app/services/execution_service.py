@@ -35,6 +35,16 @@ def execute_trade(
         return {"success": False, "error": "Cannot execute HOLD decision"}
 
     is_buy = decision_str == "BUY"
+
+    try:
+        from app.mt5_connector.orders import cancel_pending_orders_for_symbol
+
+        cancel_summary = cancel_pending_orders_for_symbol(sym, decision_str)
+        if cancel_summary.get("cancelled", 0) > 0:
+            logger.info(f"Cancelled {cancel_summary['cancelled']} opposite pending orders for {sym} before new {decision_str}")
+    except Exception as e:
+        logger.error(f"Failed to cancel opposite pending orders for {sym}: {e}")
+
     digits = int(symbol_info.get("digits", 5)) if symbol_info else 5
 
     if market_payload:

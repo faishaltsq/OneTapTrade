@@ -72,12 +72,15 @@ def generate_signal(symbol: Optional[str] = None) -> dict:
             get_equity,
         )
         from app.mt5_connector.positions import get_open_positions_count
+        from app.mt5_connector.orders import get_pending_orders_count
 
         balance = get_balance()
         equity = get_equity()
         daily_drawdown = get_daily_drawdown_percent()
         open_positions_count = get_open_positions_count(None)
         open_positions_count_symbol = get_open_positions_count(sym)
+        pending_orders_count_symbol = get_pending_orders_count(sym)
+        open_orders_count_symbol = open_positions_count_symbol + pending_orders_count_symbol
         has_open = open_positions_count_symbol > 0
 
         account_context = {
@@ -87,6 +90,7 @@ def generate_signal(symbol: Optional[str] = None) -> dict:
             "daily_drawdown_percent": daily_drawdown,
             "open_positions_count": open_positions_count,
             "open_positions_count_symbol": open_positions_count_symbol,
+            "open_orders_count_symbol": open_orders_count_symbol,
             "has_open_position": has_open,
         }
         logger.info(
@@ -283,6 +287,7 @@ def generate_signal(symbol: Optional[str] = None) -> dict:
             "spread_points": spread_points,
             "open_positions_count": open_positions_count,
             "open_positions_count_symbol": open_positions_count_symbol,
+            "open_orders_count_symbol": open_orders_count_symbol,
             "has_open_position": has_open,
             "daily_drawdown_percent": daily_drawdown or 0.0,
             "mode": settings.bot_mode,

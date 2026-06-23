@@ -76,6 +76,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
         from app.mt5_connector.market_data import get_latest_tick, get_spread, get_symbol_info
         from app.mt5_connector.account import get_balance, get_daily_drawdown_percent
         from app.mt5_connector.positions import get_open_positions_count
+        from app.mt5_connector.orders import get_pending_orders_count
 
         symbol = _decision_symbols.get(decision_id, settings.default_symbol)
         tick = get_latest_tick(symbol)
@@ -90,6 +91,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
         spread_points = get_spread(symbol) or 0
         open_positions_count = get_open_positions_count(None)
         open_positions_count_symbol = get_open_positions_count(symbol)
+        open_orders_count_symbol = open_positions_count_symbol + get_pending_orders_count(symbol)
         daily_drawdown_percent = get_daily_drawdown_percent() or 0.0
 
         sym_info = get_symbol_info(symbol)
@@ -101,6 +103,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
             "spread_points": spread_points,
             "open_positions_count": open_positions_count,
             "open_positions_count_symbol": open_positions_count_symbol,
+            "open_orders_count_symbol": open_orders_count_symbol,
             "has_open_position": open_positions_count_symbol > 0,
             "daily_drawdown_percent": daily_drawdown_percent,
             "mode": settings.bot_mode,

@@ -61,6 +61,7 @@ async def generate_signal(request: Request):
         from app.mt5_connector.market_data import get_candles, get_latest_tick, get_spread, get_symbol_info
         from app.mt5_connector.account import get_balance, get_equity, get_daily_drawdown_percent
         from app.mt5_connector.positions import get_open_positions_count
+        from app.mt5_connector.orders import get_pending_orders_count
         from app.analysis.feature_builder import build_market_payload
         from app.ai_engine.deepseek_client import get_ai_decision
         from app.ai_engine.decision_parser import format_decision_for_telegram
@@ -81,6 +82,7 @@ async def generate_signal(request: Request):
 
         open_positions_count = get_open_positions_count(None)
         open_positions_count_symbol = get_open_positions_count(symbol)
+        open_orders_count_symbol = open_positions_count_symbol + get_pending_orders_count(symbol)
         account_info = {
             "balance": get_balance(),
             "equity": get_equity(),
@@ -114,6 +116,7 @@ async def generate_signal(request: Request):
             "spread_points": spread_points,
             "open_positions_count": account_info.get("open_positions_count", 0),
             "open_positions_count_symbol": account_info.get("open_positions_count_symbol", 0),
+            "open_orders_count_symbol": open_orders_count_symbol,
             "has_open_position": open_positions_count_symbol > 0,
             "daily_drawdown_percent": account_info.get("daily_drawdown_percent", 0.0) or 0.0,
             "mode": settings.bot_mode,
@@ -180,6 +183,7 @@ async def approve_signal(request: Request, decision_id: str):
         from app.mt5_connector.market_data import get_latest_tick, get_spread, get_symbol_info
         from app.mt5_connector.account import get_balance, get_equity, get_daily_drawdown_percent
         from app.mt5_connector.positions import get_open_positions_count
+        from app.mt5_connector.orders import get_pending_orders_count
         from app.mt5_connector.execution import build_order_request, send_order
 
         stored_decision = None
@@ -199,6 +203,7 @@ async def approve_signal(request: Request, decision_id: str):
 
         open_positions_count = get_open_positions_count(None)
         open_positions_count_symbol = get_open_positions_count(symbol)
+        open_orders_count_symbol = open_positions_count_symbol + get_pending_orders_count(symbol)
         market_context = {
             "symbol": symbol,
             "current_bid": current_bid,
@@ -206,6 +211,7 @@ async def approve_signal(request: Request, decision_id: str):
             "spread_points": spread_points,
             "open_positions_count": open_positions_count,
             "open_positions_count_symbol": open_positions_count_symbol,
+            "open_orders_count_symbol": open_orders_count_symbol,
             "has_open_position": open_positions_count_symbol > 0,
             "daily_drawdown_percent": get_daily_drawdown_percent() or 0.0,
             "mode": settings.bot_mode,

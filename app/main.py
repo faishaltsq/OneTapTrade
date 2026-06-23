@@ -43,6 +43,14 @@ async def lifespan(app: FastAPI):
                     logger.info(f"Startup open position sync complete: {sync_summary}")
                 except Exception as e:
                     logger.error(f"Startup open position sync failed: {e}")
+
+                try:
+                    from app.services.position_state_service import sync_pending_orders_from_mt5
+
+                    pending_sync = sync_pending_orders_from_mt5()
+                    logger.info(f"Startup pending order sync complete: {pending_sync}")
+                except Exception as e:
+                    logger.error(f"Startup pending order sync failed: {e}")
             else:
                 logger.warning("MT5 login failed — running without MT5")
         else:

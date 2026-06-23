@@ -325,6 +325,7 @@ class TradingLoop:
             )
             from app.mt5_connector.account import get_balance, get_daily_drawdown_percent
             from app.mt5_connector.positions import get_open_positions_count
+            from app.mt5_connector.orders import get_pending_orders_count
 
             if not ensure_mt5_connected():
                 return {"success": False, "error": "MT5 disconnected"}
@@ -338,6 +339,7 @@ class TradingLoop:
             spread_points = int(get_spread(symbol) or 0)
             open_positions_count = get_open_positions_count(None)
             open_positions_count_symbol = get_open_positions_count(symbol)
+            open_orders_count_symbol = open_positions_count_symbol + get_pending_orders_count(symbol)
             daily_drawdown = get_daily_drawdown_percent() or 0.0
 
             market_context = {
@@ -347,6 +349,7 @@ class TradingLoop:
                 "spread_points": spread_points,
                 "open_positions_count": open_positions_count,
                 "open_positions_count_symbol": open_positions_count_symbol,
+                "open_orders_count_symbol": open_orders_count_symbol,
                 "has_open_position": open_positions_count_symbol > 0,
                 "daily_drawdown_percent": daily_drawdown,
                 "mode": self._status_service.mode,
