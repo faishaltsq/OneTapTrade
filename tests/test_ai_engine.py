@@ -252,3 +252,27 @@ def test_validated_decision_includes_strategy_mode_and_trading_style():
     finally:
         settings.strategy_mode = original_mode
         settings.risk_profile = original_profile
+
+
+def test_deepseek_normalizes_sell_limit_entry_type():
+    from unittest.mock import MagicMock, patch
+    from app.config import settings
+    from app.ai_engine.deepseek_client import get_ai_decision
+
+    original_key = settings.deepseek_api_key
+    try:
+        settings.deepseek_api_key = "test-key"
+        fake_response = MagicMock()
+        fake_response.choices = [MagicMock()]
+        fake_response.choices[0].message.content = '{"decision":"SELL","confidence":0.65,"confidence_label":"MEDIUM","market_regime":"TRENDING_DOWN","higher_timeframe_bias":"BEARISH","entry_timeframe_bias":"BEARISH","main_reason":"bearish","entry_plan":{"entry_type":"SELL_LIMIT","stop_loss":2010,"take_profit_1":1990,"preferred_entry_price":2000,"risk_reward_to_tp1":2.0},"execution_permission":{"ai_allows_execution":true,"reason":"ok"},"risk_notes":{"main_risk":"","invalidation_condition":"","conditions_to_avoid_trade":[]},"final_comment":""}'
+        fake_response.usage = None
+
+        with patch("app.ai_engine.deepseek_client.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = fake_response
+            mock_openai.return_value = mock_client
+            decision = get_ai_decision({"symbol": "XAUUSD"})
+
+        assert decision.entry_plan.entry_type == EntryType.LIMIT
+    finally:
+        settings.deepseek_api_key = original_key

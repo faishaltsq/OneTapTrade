@@ -42,6 +42,26 @@ def _default_hold() -> AIDecisionResponse:
     )
 
 
+_ENTRY_TYPE_ALIASES = {
+    "SELL_LIMIT": "LIMIT",
+    "BUY_LIMIT": "LIMIT",
+    "SELL_STOP": "STOP",
+    "BUY_STOP": "STOP",
+}
+
+
+def _normalize_entry_type(data: dict) -> None:
+    entry_plan = data.get("entry_plan")
+    if not isinstance(entry_plan, dict):
+        return
+    raw = entry_plan.get("entry_type")
+    if isinstance(raw, str):
+        normalized = _ENTRY_TYPE_ALIASES.get(raw.upper(), raw)
+        if normalized != raw:
+            logger.info(f"Normalized entry_type: {raw} -> {normalized}")
+            entry_plan["entry_type"] = normalized
+
+
 def get_ai_decision(market_payload: dict) -> AIDecisionResponse:
     if not settings.deepseek_api_key:
         logger.error("DeepSeek API key not configured")
@@ -92,12 +112,14 @@ def get_ai_decision(market_payload: dict) -> AIDecisionResponse:
         data = json.loads(raw_text)
     except json.JSONDecodeError:
         logger.warning("AI response was not valid JSON, attempting extraction from markdown")
-        try:
-            data = extract_json_from_response(raw_text)
-        except ValueError as e:
-            logger.error(f"Failed to extract JSON from AI response: {e}")
-            logger.debug(f"Raw AI response: {raw_text[:500]}")
-            return _default_hold()
+    try:
+        data = extract_json_from_response(raw_text)
+    except ValueError as e:
+        logger.error(f"Failed to extract JSON from AI response: {e}")
+        logger.debug(f"Raw AI response: {raw_text[:500]}")
+        return _default_hold()
+
+    _normalize_entry_type(data)
 
     try:
         partial = AIDecisionPartial(**data)
