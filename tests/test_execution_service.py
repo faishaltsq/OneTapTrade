@@ -371,3 +371,62 @@ def test_middle_third_buy_limit_keeps_ai_tp(monkeypatch):
     assert result["success"] is True
     rr = abs(captured["tp"] - captured["price"]) / abs(captured["price"] - captured["sl"])
     assert rr > 2.0
+
+
+def test_near_third_rejects_smc_target_below_min_rr(monkeypatch):
+    from app.services.execution_service import execute_trade
+
+    decision = SimpleNamespace(
+        decision="BUY",
+        confidence=0.7,
+        entry_plan=SimpleNamespace(
+            entry_type=SimpleNamespace(value="MARKET"),
+            preferred_entry_price=100.2,
+            stop_loss=99.0,
+            take_profit_1=110.0,
+        ),
+    )
+    payload = {
+        "major_trend": {"allowed_directions": ["BUY"]},
+        "primary_timeframe": {"market_structure": {"trend": "BULLISH"}},
+        "entry_timeframe": {"market_structure": {"trend": "BULLISH"}},
+        "smc": {
+            "order_blocks": {"demand": [{"low": 99.9, "high": 100.1, "index": 8}], "supply": []},
+            "choch": {"m5": {"bullish_choch": True}},
+            "fvg_zones": [],
+            "liquidity_levels": [{"price": 100.3, "type": "high"}],
+        },
+    }
+    captured = {}
+
+    monkeypatch.setattr(
+        "app.risk.position_sizing.calculate_lot_size",
+        lambda account_balance, sl_points, symbol_info: {"is_valid": True, "lot": 0.01},
+    )
+
+    def fake_build(**kwargs):
+        captured.update(kwargs)
+        return {"price": kwargs["price"]}
+
+    monkeypatch.setattr("app.mt5_connector.execution.build_order_request", fake_build)
+    monkeypatch.setattr("app.mt5_connector.execution.check_order", lambda request: {"retcode": 0, "comment": "Done"})
+    monkeypatch.setattr("app.mt5_connector.execution.send_order", lambda request: {"retcode": 10008, "order": 999, "price": 0.0})
+    monkeypatch.setattr("app.database.repositories.save_trade", lambda trade_data: {"id": trade_data["id"]})
+    monkeypatch.setattr("app.database.repositories.log_bot_event", lambda **kwargs: None)
+
+    result = execute_trade(
+        decision,
+        {"symbol": "XAUUSD.c"},
+        {"point": 0.01, "digits": 2, "trade_stops_level": 0},
+        1000.0,
+        current_bid=100.0,
+        current_ask=100.2,
+        market_payload=payload,
+    )
+
+    assert result["success"] is True
+    tp = captured["tp"]
+    entry = captured["price"]
+    sl = captured["sl"]
+    rr = abs(tp - entry) / abs(entry - sl)
+    assert rr >= 1.49

@@ -176,15 +176,18 @@ def execute_trade(
 
             if smc_target is not None:
                 smc_rr = abs(smc_target - entry_price) / sl_dist if sl_dist > 0 else 99
-                if smc_rr <= 2.0:
+                if 1.5 <= smc_rr <= 2.0:
                     take_profit = _normalize_price(smc_target)
                     logger.info(f"Near-third TP from SMC target: {take_profit} (R:R {smc_rr:.1f})")
                 else:
                     if is_buy:
-                        take_profit = _normalize_price(entry_price + (sl_dist * 2.0))
+                        take_profit = _normalize_price(entry_price + (sl_dist * 1.5))
                     else:
-                        take_profit = _normalize_price(entry_price - (sl_dist * 2.0))
-                    logger.info(f"Near-third TP capped at 2x SL: {take_profit} (SMC target R:R {smc_rr:.1f} too far)")
+                        take_profit = _normalize_price(entry_price - (sl_dist * 1.5))
+                    if smc_rr < 1.5:
+                        logger.info(f"Near-third TP default 1.5x SL: {take_profit} (SMC target R:R {smc_rr:.1f} too thin)")
+                    else:
+                        logger.info(f"Near-third TP capped at 1.5x SL: {take_profit} (SMC target R:R {smc_rr:.1f} too far)")
             else:
                 if is_buy:
                     take_profit = _normalize_price(entry_price + (sl_dist * 1.5))
