@@ -26,14 +26,19 @@ class BotStatusService:
                 if db_mode and db_mode in _VALID_MODES:
                     self._mode = db_mode
                     settings.bot_mode = db_mode
+
+                db_profile = db_settings.get("risk_profile")
+                if db_profile and db_profile in {"LOW", "MEDIUM", "HIGH"}:
+                    settings.risk_profile = db_profile
+
                 logger.info(
-                    f"BotStatusService loaded from DB: mode={self._mode}"
+                    f"BotStatusService loaded from DB: mode={self._mode} profile={settings.risk_profile}"
                 )
             else:
-                logger.info(f"BotStatusService fresh start: mode={self._mode}")
+                logger.info(f"BotStatusService fresh start: mode={self._mode} profile={settings.risk_profile}")
         except Exception as e:
             logger.warning(f"Failed to load bot status from DB, using defaults: {e}")
-        logger.info(f"State: paused={self._is_paused} | mode={self._mode} | symbol={self._active_symbol}")
+        logger.info(f"State: paused={self._is_paused} | mode={self._mode} | symbol={self._active_symbol} | profile={settings.risk_profile}")
 
     @property
     def is_paused(self) -> bool:
