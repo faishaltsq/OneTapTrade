@@ -65,7 +65,8 @@ def execute_trade(
                 preferred_entry = smc_entry.get("entry_price")
                 logger.info(
                     f"SMC LIMIT selected: {smc_entry.get('order_type')} @ {preferred_entry} "
-                    f"zone={smc_entry.get('zone_type')} quality={smc_entry.get('quality')}"
+                    f"zone={smc_entry.get('zone_type')} quality={smc_entry.get('quality')} "
+                    f"near_third={smc_entry.get('is_near_third')}"
                 )
             elif not can_use_market_fallback(
                 decision_str,
@@ -78,6 +79,9 @@ def execute_trade(
                 }
         except Exception as e:
             logger.debug(f"SMC entry selector skipped: {e}")
+            smc_entry = {}
+    else:
+        smc_entry = {}
 
     def _normalize_price(value):
         return round(float(value), digits) if value is not None else None
@@ -161,6 +165,34 @@ def execute_trade(
                 stop_loss = _normalize_price(adjusted_sl)
         except Exception as e:
             logger.debug(f"SMC SL protection skipped: {e}")
+
+    if is_limit and smc_entry.get("is_near_third") and stop_loss and entry_price and take_profit:
+        try:
+            from app.analysis.smc_tp_target import find_smc_tp_target
+
+            sl_dist = abs(entry_price - stop_loss)
+            smc = market_payload.get("smc", {}) if market_payload else {}
+            smc_target = find_smc_tp_target(decision_str, entry_price, smc)
+
+            if smc_target is not None:
+                smc_rr = abs(smc_target - entry_price) / sl_dist if sl_dist > 0 else 99
+                if smc_rr <= 2.0:
+                    take_profit = _normalize_price(smc_target)
+                    logger.info(f"Near-third TP from SMC target: {take_profit} (R:R {smc_rr:.1f})")
+                else:
+                    if is_buy:
+                        take_profit = _normalize_price(entry_price + (sl_dist * 2.0))
+                    else:
+                        take_profit = _normalize_price(entry_price - (sl_dist * 2.0))
+                    logger.info(f"Near-third TP capped at 2x SL: {take_profit} (SMC target R:R {smc_rr:.1f} too far)")
+            else:
+                if is_buy:
+                    take_profit = _normalize_price(entry_price + (sl_dist * 1.5))
+                else:
+                    take_profit = _normalize_price(entry_price - (sl_dist * 1.5))
+                logger.info(f"Near-third TP default 1.5x SL: {take_profit} (no SMC target)")
+        except Exception as e:
+            logger.debug(f"Near-third TP adjustment skipped: {e}")
 
     logger.info("Step 3-5: Building and checking order...")
     try:

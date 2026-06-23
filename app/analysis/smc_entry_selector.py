@@ -13,9 +13,11 @@ def select_smc_limit_entry(
         return _no_limit(f"D1 major trend does not allow {side}")
 
     if side == "BUY":
-        return _select_buy_limit(order_blocks.get("demand", []) or [], current_ask, smc)
+        result = _select_buy_limit(order_blocks.get("demand", []) or [], current_ask, smc)
+        return _mark_near_third(result, current_ask)
     if side == "SELL":
-        return _select_sell_limit(order_blocks.get("supply", []) or [], current_bid, smc)
+        result = _select_sell_limit(order_blocks.get("supply", []) or [], current_bid, smc)
+        return _mark_near_third(result, current_bid)
     return _no_limit("Decision is not BUY or SELL")
 
 
@@ -116,6 +118,9 @@ def _quality(score: float) -> str:
 
 
 def _limit_result(order_type: str, zone_type: str, low: float, high: float, entry: float, score: float, block: dict) -> dict:
+    depth = (entry - low) / (high - low) if (high - low) != 0 else 0.0
+    depth = round(max(0.0, min(1.0, depth)), 2)
+
     return {
         "valid": _quality(score) in {"MEDIUM", "HIGH"},
         "entry_type": "LIMIT",
@@ -124,11 +129,23 @@ def _limit_result(order_type: str, zone_type: str, low: float, high: float, entr
         "zone_type": zone_type,
         "zone_low": round(low, 5),
         "zone_high": round(high, 5),
+        "zone_depth": depth,
+        "is_near_third": False,
         "score": score,
         "quality": _quality(score),
         "reason": f"Selected {zone_type} with {round(score, 2)} score",
         "source": block,
     }
+
+
+def _mark_near_third(result: dict, current_price: float) -> dict:
+    if not result.get("valid"):
+        return result
+    entry = float(result.get("entry_price", 0) or 0)
+    if current_price and entry:
+        distance_pct = abs(current_price - entry) / max(abs(current_price), 0.0001)
+        result["is_near_third"] = distance_pct <= 0.003
+    return result
 
 
 def _no_limit(reason: str) -> dict:

@@ -118,6 +118,22 @@ def test_system_prompt_prefers_smc_limit_entries_and_restricts_market():
         settings.strategy_mode = original_mode
 
 
+def test_system_prompt_advises_near_third_tp():
+    from app.ai_engine.prompt_builder import build_system_prompt
+    from app.config import settings
+
+    original_mode = settings.strategy_mode
+    try:
+        settings.strategy_mode = "SMC_AI"
+        prompt = build_system_prompt()
+
+        assert "near-third" in prompt.lower()
+        assert "1:1.5" in prompt
+        assert "1:2" in prompt
+    finally:
+        settings.strategy_mode = original_mode
+
+
 def test_smc_ai_prompt_contains_smc_keywords():
     from app.ai_engine.prompt_builder import build_system_prompt
     from app.config import settings

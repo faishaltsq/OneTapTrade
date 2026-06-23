@@ -91,3 +91,59 @@ def test_market_fallback_requires_confidence_above_50_and_trend_following():
         0.8,
         _payload(h1_trend="BEARISH", m5_trend="BEARISH"),
     ) is False
+
+
+def test_buy_selector_returns_zone_depth_and_near_third_flag():
+    result = select_smc_limit_entry(
+        "BUY",
+        current_bid=100.0,
+        current_ask=100.2,
+        market_payload=_payload(demand=[{"low": 98.0, "high": 99.0, "index": 8}]),
+    )
+
+    assert result["valid"] is True
+    assert "zone_depth" in result
+    assert "is_near_third" in result
+    assert 0.0 <= result["zone_depth"] <= 1.0
+    assert isinstance(result["is_near_third"], bool)
+
+
+def test_buy_near_third_entry_has_is_near_third_true():
+    result = select_smc_limit_entry(
+        "BUY",
+        current_bid=100.0,
+        current_ask=100.2,
+        market_payload=_payload(demand=[{"low": 99.8, "high": 100.1, "index": 8}]),
+    )
+
+    assert result["valid"] is True
+    assert result["is_near_third"] is True
+
+
+def test_buy_premium_third_entry_has_is_near_third_false():
+    result = select_smc_limit_entry(
+        "BUY",
+        current_bid=100.0,
+        current_ask=100.2,
+        market_payload=_payload(demand=[{"low": 95.0, "high": 96.0, "index": 8}]),
+    )
+
+    assert result["valid"] is True
+    assert result["is_near_third"] is False
+
+
+def test_sell_near_third_entry_has_is_near_third_true():
+    result = select_smc_limit_entry(
+        "SELL",
+        current_bid=100.0,
+        current_ask=100.2,
+        market_payload=_payload(
+            supply=[{"low": 100.2, "high": 100.5, "index": 8}],
+            allowed=["SELL"],
+            h1_trend="BEARISH",
+            m5_trend="BEARISH",
+        ),
+    )
+
+    assert result["valid"] is True
+    assert result["is_near_third"] is True

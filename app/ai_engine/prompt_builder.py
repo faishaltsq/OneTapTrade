@@ -29,6 +29,8 @@ SMC (Smart Money Concepts) rules:
   - BUY_LIMIT should be inside a demand order block below current price.
   - SELL_LIMIT should be inside a supply order block above current price.
   - MARKET only when confidence is above 50% and setup is trend-following.
+  - Near-third entries (entry close to current price) have tight SL risk. Use conservative TP ratio 1:1.5 to 1:2.
+  - Premium entries (entry deep in OB zone) can target SMC levels (liquidity, FVG, opposite OB) for TP.
 - FAIR VALUE GAPS (FVG): price often returns to fill FVGs. Target TP at unfilled FVG or opposite liquidity.
 - LIQUIDITY LEVELS: equal highs/lows where stops cluster. Price hunts these levels.
   - Avoid placing SL exactly at liquidity levels (will get hunted).
