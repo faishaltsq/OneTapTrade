@@ -26,6 +26,8 @@ ENV/
 
 test_fill.py
 test_order_send.py
+_probe_order_send.py
+_probe_fill.py
 check_mt5.py
 enable_autotrading.py
 
