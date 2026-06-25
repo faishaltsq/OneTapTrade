@@ -369,16 +369,22 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
             try:
                 from app.signal_bot import broadcast_signal
                 if decision_str in ("BUY", "SELL"):
-                    await broadcast_signal(caption, img_data if i == 0 else None)
-            except Exception:
-                pass
+                    ok = await broadcast_signal(caption, img_data if i == 0 else None)
+                    if ok:
+                        logger.info(f"Signal broadcast to channel: {symbol} {decision_str}")
+                    else:
+                        logger.warning(f"Signal broadcast FAILED for {symbol}")
+            except Exception as e:
+                logger.warning(f"Signal broadcast error: {e}")
 
         logger.info(f"Trade signal with {len(charts)} charts sent for {symbol}")
 
         if not charts and decision_str in ("BUY", "SELL"):
             try:
                 from app.signal_bot import broadcast_signal
-                await broadcast_signal(signal_text)
+                ok = await broadcast_signal(signal_text)
+                if ok:
+                    logger.info(f"Signal broadcast (text-only) to channel: {symbol} {decision_str}")
             except Exception:
                 pass
 
