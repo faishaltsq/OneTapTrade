@@ -188,21 +188,6 @@ class TradingLoop:
         if hasattr(decision_str, "value"):
             decision_str = decision_str.value
 
-        if decision_str in ("BUY", "SELL") and tv_data:
-            try:
-                from app.services.tv_autochart_service import draw_signal_on_chart
-
-                ep = getattr(ai_decision, "entry_plan", None)
-                await draw_signal_on_chart(
-                    symbol=symbol,
-                    decision=decision_str,
-                    entry_price=getattr(ep, "preferred_entry_price", None) if ep else None,
-                    stop_loss=getattr(ep, "stop_loss", None) if ep else None,
-                    take_profit=getattr(ep, "take_profit_1", None) if ep else None,
-                )
-            except Exception as e:
-                logger.warning(f"TV autochart failed for {symbol}: {e}")
-
         approved = risk_result.get("approved", False)
         mode = self._status_service.mode
         is_hold = (decision_str == "HOLD")

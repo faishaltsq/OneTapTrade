@@ -239,19 +239,16 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
         symbol = risk_result.get("symbol", settings.default_symbol)
         signal_text = format_signal_message(decision, risk_result, symbol, market_payload=market_payload)
         chat_id = settings.telegram_allowed_chat_id
+        decision_str = getattr(decision, "decision", None)
+        if hasattr(decision_str, "value"):
+            decision_str = decision_str.value
 
         reply_markup = None
         if settings.is_semi_auto and risk_result.get("approved"):
             keyboard = [
                 [
-                    InlineKeyboardButton(
-                        "\u2705 Approve Trade",
-                        callback_data=f"APPROVE_TRADE:{decision_id}",
-                    ),
-                    InlineKeyboardButton(
-                        "\u274c Reject Trade",
-                        callback_data=f"REJECT_TRADE:{decision_id}",
-                    ),
+                    InlineKeyboardButton("\u2705 Approve Trade", callback_data=f"APPROVE_TRADE:{decision_id}"),
+                    InlineKeyboardButton("\u274c Reject Trade", callback_data=f"REJECT_TRADE:{decision_id}"),
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -259,27 +256,45 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
         _decision_symbols[decision_id] = symbol
         _pending_decisions[decision_id] = decision
 
-        screenshot = await capture_tv_screenshot()
+        entry_plan = getattr(decision, "entry_plan", None)
+        entry_price = getattr(entry_plan, "preferred_entry_price", None) if entry_plan else None
+        stop_loss = getattr(entry_plan, "stop_loss", None) if entry_plan else None
+        take_profit = getattr(entry_plan, "take_profit_1", None) if entry_plan else None
 
-        if screenshot:
-            from io import BytesIO
+        from app.services.tv_autochart_service import draw_and_capture_multi_tf
 
-            img = BytesIO(screenshot)
-            img.name = "chart.png"
+        charts = await draw_and_capture_multi_tf(
+            mt5_symbol=symbol,
+            decision=decision_str or "HOLD",
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+        )
+
+        if not charts:
+            return False
+
+        from io import BytesIO
+
+        for i, chart in enumerate(charts):
+            img_data = chart["image"]
+            tf = chart["timeframe"]
+            tf_label = {"H1": "\U0001f4ca H1 — Context", "M5": "\U0001f4ca M5 — Entry", "M15": "\U0001f4ca M15 — Confirmation"}.get(tf, f"\U0001f4ca {tf}")
+
+            caption = f"{tf_label}\n{signal_text}" if i == 0 else tf_label
+
+            img = BytesIO(img_data)
+            img.name = f"{symbol}_{tf}.png"
             await _application.bot.send_photo(
                 chat_id=chat_id,
                 photo=img,
-                caption=signal_text,
+                caption=caption,
                 parse_mode="HTML",
-                reply_markup=reply_markup,
+                reply_markup=reply_markup if i == 0 else None,
             )
-            logger.info(f"Trade signal with chart sent for decision {decision_id}")
-            return True
-        else:
-            sent = await send_message(signal_text, reply_markup=reply_markup)
-            if sent:
-                logger.info(f"Trade signal sent (no chart) for decision {decision_id}")
-            return sent
+
+        logger.info(f"Trade signal with {len(charts)} charts sent for {symbol}")
+        return True
     except Exception as e:
         logger.error(f"Failed to send trade signal: {e}")
         return False
