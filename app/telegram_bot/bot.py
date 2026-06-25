@@ -327,8 +327,8 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
             tfs = ["D1", "H1", "M5"]
             iface_label = {"D1": "\U0001f4ca D1 \u2014 Daily Trend", "H1": "\U0001f4ca H1 \u2014 Execution Bias", "M5": "\U0001f4ca M5 \u2014 Entry Trigger"}
         else:
-            tfs = ["M5"]
-            iface_label = {"M5": "\U0001f4ca M5 \u2014 Market View"}
+            tfs = ["D1", "H1", "M5"]
+            iface_label = {"D1": "\U0001f4ca D1 \u2014 Daily Trend", "H1": "\U0001f4ca H1 \u2014 Execution Bias", "M5": "\U0001f4ca M5 \u2014 Entry Trigger"}
 
             limit_recs = _build_limit_recommendation(market_payload)
             if limit_recs:
