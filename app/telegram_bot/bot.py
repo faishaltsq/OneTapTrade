@@ -368,7 +368,8 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
 
             try:
                 from app.signal_bot import broadcast_signal
-                await broadcast_signal(caption, img_data if i == 0 else None)
+                if decision_str in ("BUY", "SELL"):
+                    await broadcast_signal(caption, img_data if i == 0 else None)
             except Exception:
                 pass
 
