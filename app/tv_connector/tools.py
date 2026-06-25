@@ -209,18 +209,23 @@ class TVTools:
 
     async def capture_screenshot(self, region: str = "chart") -> Optional[bytes]:
         result = await self._client.try_call_tool("capture_screenshot", {"region": region})
-        if isinstance(result, str):
-            import base64
-            try:
-                return base64.b64decode(result)
-            except Exception:
-                return None
-        if isinstance(result, dict) and "data" in result:
-            import base64
-            try:
-                return base64.b64decode(result["data"])
-            except Exception:
-                return None
+        if isinstance(result, dict):
+            file_path = result.get("file_path") or result.get("path") or result.get("file")
+            if file_path:
+                import os
+                if os.path.exists(file_path):
+                    try:
+                        with open(file_path, "rb") as f:
+                            return f.read()
+                    except Exception as e:
+                        logger.debug(f"Failed to read screenshot file: {e}")
+                        return None
+            if "data" in result:
+                import base64
+                try:
+                    return base64.b64decode(result["data"])
+                except Exception:
+                    return None
         return None
 
     # ── replay ────────────────────────────────────────────────────────────
