@@ -178,7 +178,7 @@ def build_market_payload(
     from app.services.position_state_service import get_open_position_state
 
     smc_section = build_smc_section(df_h1, df_m15)
-    major_trend = build_major_trend_section(df_d1, smc_section)
+    major_trend = build_major_trend_section(df_d1, smc_section, df_h1)
     open_position_state = get_open_position_state(symbol)
 
     payload = {

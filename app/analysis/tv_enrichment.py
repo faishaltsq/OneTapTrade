@@ -5,7 +5,7 @@ def compute_confluence_score(market_payload: dict) -> dict:
     score = 0
     details: dict[str, Any] = {
         "total_score": 0,
-        "max_score": 9,
+        "max_score": 11,
         "breakdown": {},
         "profile_threshold": 0,
     }
@@ -28,6 +28,19 @@ def compute_confluence_score(market_payload: dict) -> dict:
         details["breakdown"]["d1_trend"] = 1
     else:
         details["breakdown"]["d1_trend"] = 0
+
+    # 1b. H1 alignment with D1 (0-2)
+    h1_alignment = major_trend.get("h1_alignment", "NONE")
+    if h1_alignment == "ALIGNED":
+        score += 2
+        details["breakdown"]["h1_alignment"] = 2
+    elif h1_alignment == "NEUTRAL":
+        score += 1
+        details["breakdown"]["h1_alignment"] = 1
+    elif h1_alignment == "CONTRARY":
+        details["breakdown"]["h1_alignment"] = -1
+    else:
+        details["breakdown"]["h1_alignment"] = 0
 
     # 2. TV indicator agreement (0-2)
     tv_ind_values = tv_ctx.get("indicator_values", [])

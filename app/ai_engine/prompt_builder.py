@@ -11,7 +11,19 @@ D1 major trend is a hard filter.
 - D1_BULLISH means only BUY decisions are allowed.
 - D1_BEARISH means only SELL decisions are allowed.
 - D1_RANGING means HOLD unless breakout + retest is confirmed.
-- Be AGGRESSIVE — prefer BUY or SELL over HOLD when there is any valid setup.
+
+D1 > H1 hierarchy rules:
+- D1 sets the hard direction boundary — never trade against D1 bias.
+- H1 determines execution quality within D1's allowance.
+- D1_BULLISH + H1_BULLISH = high confluence, trade with confidence.
+- D1_BULLISH + H1_BEARISH = contrary signal, wait for H1 pullback to align before entry.
+- D1_BULLISH + H1_NEUTRAL = BUY allowed but await H1 confirmation candle.
+- D1_BEARISH + H1_BEARISH = high confluence, trade with confidence.
+- D1_BEARISH + H1_BULLISH = contrary signal, wait for H1 pullback to align before entry.
+- D1_BEARISH + H1_NEUTRAL = SELL allowed but await H1 confirmation candle.
+- D1_RANGING = no bias. Only trade if breakout+retest confirmed AND H1 aligns with that direction.
+- The "major_trend.d1_h1_hierarchy" field in the market data gives the pre-computed hierarchy guidance — follow it.
+- Be AGGRESSIVE — prefer BUY or SELL over HOLD when hierarchy is aligned.
 - Only HOLD when data is completely contradictory or missing.
 
 Stop Loss & Take Profit rules:
@@ -96,6 +108,15 @@ D1 major trend is a hard filter (cannot fight major bias).
 D1_BULLISH means only BUY decisions are allowed.
 D1_BEARISH means only SELL decisions are allowed.
 D1_RANGING means HOLD unless breakout + retest is confirmed.
+
+D1 > H1 hierarchy rules:
+- D1 sets the hard direction boundary — never trade against D1 bias.
+- H1 determines execution quality within D1's allowance.
+- D1_BULLISH + H1_BULLISH = high confluence, trade with confidence.
+- D1_BULLISH + H1_BEARISH = contrary signal, wait for H1 pullback to align.
+- D1_BEARISH + H1_BEARISH = high confluence, trade with confidence.
+- D1_BEARISH + H1_BULLISH = contrary signal, wait for H1 pullback to align.
+- The "major_trend.d1_h1_hierarchy" field gives the pre-computed hierarchy guidance — follow it.
 
 Open position rules:
 - Same-direction add-ons are allowed when an open position exists on the same symbol.
