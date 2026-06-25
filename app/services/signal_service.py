@@ -250,6 +250,7 @@ def generate_signal(symbol: Optional[str] = None, tv_data: dict = None) -> dict:
                 "symbol": sym,
                 "ai_decision": hold_decision,
                 "risk_result": {
+                    "symbol": sym,
                     "approved": False,
                     "reason": f"Noise filter: {noise_result['hold_reason']}",
                     "checks": {},
