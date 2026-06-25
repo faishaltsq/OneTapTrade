@@ -30,7 +30,7 @@ def build_main_menu_keyboard(is_paused: bool = True, mode: str = "SIGNAL_ONLY", 
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     pause_btn = InlineKeyboardButton(
-        "\u25b6\ufe0f Resume Trade" if is_paused else "\U0001f6d1 Stop Trade",
+        "\u25b6\ufe0f Auto Signal ON" if is_paused else "\u23f8\ufe0f Auto Signal OFF",
         callback_data="MENU_TOGGLE_PAUSE",
     )
     mode_label = {"SIGNAL_ONLY": "Signal", "SEMI_AUTO": "Semi-Auto", "AUTO_DEMO": "Auto Demo", "LIVE_AUTO": "Live"}.get(mode, mode)
@@ -183,9 +183,9 @@ def format_status_message(status_data: dict) -> str:
     lines.append(f"<b>Symbol:</b> <code>{_escape_html(symbol)}</code>")
 
     if paused:
-        lines.append("\n\U0001f6d1 <b>TRADING STOPPED</b>")
+        lines.append("\n\u23f8\ufe0f <b>Auto Signal: OFF</b> (use \U0001f50d Analyze for manual)")
     else:
-        lines.append("\n\u25b6\ufe0f <b>Trading Running</b>")
+        lines.append("\n\u25b6\ufe0f <b>Auto Signal: ON</b>")
 
     if mt5_connected:
         lines.append(f"<b>Equity:</b> ${equity:,.2f}" if equity is not None else "<b>Equity:</b> N/A")
@@ -479,8 +479,16 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
     d_emoji = _decision_emoji(decision_str)
     c_emoji = _confidence_emoji(confidence)
 
-    lines = [f"<b>📊 Market Trend — {_escape_html(symbol)}</b>"]
-    lines.append(f"{d_emoji} <b>Decision:</b> {_escape_html(decision_str)} | {c_emoji} <b>Confidence:</b> {confidence:.0%}")
+    major_trend = payload.get("major_trend", {})
+    d1_bias = major_trend.get("bias", "D1_UNCLEAR")
+    h1_bias = major_trend.get("h1_bias", "NONE")
+    hierarchy = major_trend.get("d1_h1_hierarchy", "")
+
+    lines = [
+        f"<b>{d_emoji} {_escape_html(symbol)} — {_escape_html(d1_bias)} | H1 {_escape_html(h1_bias)}</b>",
+        f"{_escape_html(hierarchy)}",
+        f"<b>Decision:</b> {_escape_html(decision_str)} | {c_emoji} <b>{confidence:.0%}</b>",
+    ]
     lines.extend(_format_bias_map(decision, payload))
     lines.extend(_format_price(payload))
     lines.extend(_format_momentum(payload))

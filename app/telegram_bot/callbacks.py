@@ -734,7 +734,7 @@ async def menu_analyze_callback(update: Update, context: ContextTypes.DEFAULT_TY
         symbols = settings.symbols
         for symbol in symbols:
             try:
-                result = await trading_loop._run_symbol(symbol)
+                result = await trading_loop._run_symbol(symbol, force=True)
                 ai_decision = result.get("ai_decision")
                 risk_result = result.get("risk_result", {})
                 decision_id = result.get("decision_id", str(uuid.uuid4()))

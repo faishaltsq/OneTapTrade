@@ -222,7 +222,7 @@ async def send_main_menu(text: str = None) -> bool:
             pass
 
     sym_count = len(settings.symbols)
-    header = text or f"<b>\U0001f916 OneTapTrade Bot</b>\n<b>Pair:</b> {active} ({sym_count} pairs) | {mode} | {'\U0001f6d1 Stop Trade' if paused else '\u25b6\ufe0f Trading Running'}"
+    header = text or f"<b>\U0001f916 OneTapTrade Bot</b>\n<b>Pair:</b> {active} ({sym_count} pairs) | {mode} | {'\u23f8\ufe0f Auto Signal OFF' if paused else '\u25b6\ufe0f Auto Signal ON'}"
     return await send_message(header, reply_markup=build_main_menu_keyboard(is_paused=paused, mode=mode, active_symbol=active))
 
 

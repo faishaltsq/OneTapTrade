@@ -158,10 +158,10 @@ class TradingLoop:
 
         return {"symbols": symbols, "results": results}
 
-    async def _run_symbol(self, symbol: str) -> dict:
+    async def _run_symbol(self, symbol: str, force: bool = False) -> dict:
         logger.info(f"Starting analysis cycle for {symbol}...")
 
-        if self._status_service.is_paused:
+        if self._status_service.is_paused and not force:
             logger.info("Trading loop is paused — skipping cycle")
             return {"symbol": symbol, "skipped": True, "reason": "Trading paused"}
 
