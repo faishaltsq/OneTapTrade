@@ -185,10 +185,10 @@ async def draw_and_capture_multi_tf(
         except Exception as e:
             logger.debug(f"TV capture failed for {tv_symbol} {tf}: {e}")
 
-    try:
-        await tools.draw_clear()
-    except Exception:
-        pass
+        try:
+            await tools.draw_clear()
+        except Exception:
+            pass
 
     logger.info(f"TV multi-TF: captured {len(results)}/{len(timeframes)} for {mt5_symbol}")
     return results
