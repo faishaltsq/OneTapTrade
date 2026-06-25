@@ -679,34 +679,76 @@ async def menu_chart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.answer("Unauthorized", show_alert=True)
         return
 
-    from app.tv_connector import is_tv_available
-    from app.telegram_bot.bot import capture_tv_screenshot, _application
+    from app.tv_connector import is_tv_available, get_tv_tools
+    from app.telegram_bot.bot import _application
+    import asyncio
+    import re
 
-    if not is_tv_available():
+    tools = get_tv_tools()
+    if tools is None:
         await _edit_message(update, "\u26a0\ufe0f TradingView not connected.")
         await query.answer()
         return
 
-    await _edit_message(update, "\U0001f4ca Capturing chart...")
+    symbols = settings.symbols
+    await _edit_message(update, f"\U0001f4ca Capturing {len(symbols)} pairs...")
     await query.answer()
 
-    try:
-        screenshot = await capture_tv_screenshot()
-        if screenshot:
+    for mt5_symbol in symbols:
+        tv_symbol = re.sub(r"\.[A-Z0-9]+$", "", mt5_symbol.upper())
+
+        try:
+            await tools.set_symbol(tv_symbol)
+            await asyncio.sleep(2)
+        except Exception as e:
+            logger.debug(f"Chart: set_symbol {tv_symbol} failed: {e}")
+
+        try:
+            screenshot = await tools.capture_screenshot("chart")
+        except Exception as e:
+            logger.debug(f"Chart: screenshot {tv_symbol} failed: {e}")
+            continue
+
+        if not screenshot:
+            continue
+
+        trend_text = ""
+        try:
+            from app.mt5_connector.market_data import get_candles
+            import pandas as pd
+            df_d1 = get_candles(mt5_symbol, timeframe="D1", count=2)
+            if df_d1 is not None and len(df_d1) >= 1:
+                last = df_d1.iloc[-1]
+                close = float(last.get("close", 0))
+                open_p = float(last.get("open", 0))
+                if close > open_p:
+                    trend_text = "D1 BULLISH"
+                elif close < open_p:
+                    trend_text = "D1 BEARISH"
+                else:
+                    trend_text = "D1 RANGING"
+            else:
+                trend_text = "No D1 data"
+        except Exception as e:
+            trend_text = "Trend unavailable"
+
+        caption = f"\U0001f4ca <b>{tv_symbol}</b> — {trend_text}"
+
+        try:
             from io import BytesIO
 
             img = BytesIO(screenshot)
-            img.name = "chart.png"
+            img.name = f"{tv_symbol}.png"
             await _application.bot.send_photo(
                 chat_id=query.message.chat_id,
                 photo=img,
-                caption="\U0001f4ca TradingView Chart",
+                caption=caption,
+                parse_mode="HTML",
             )
-        else:
-            await _edit_message(update, "\u26a0\ufe0f Failed to capture chart.")
-    except Exception as e:
-        logger.warning(f"Send chart failed: {e}")
-        await _edit_message(update, "\u26a0\ufe0f Error capturing chart.")
+        except Exception as e:
+            logger.warning(f"Chart: send {tv_symbol} failed: {e}")
+
+    await send_message(f"\u2705 All {len(symbols)} pairs captured.")
 
 
 async def menu_analyze_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
