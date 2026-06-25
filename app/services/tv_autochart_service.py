@@ -11,13 +11,16 @@ async def draw_signal_on_chart(
     take_profit: Optional[float],
 ) -> bool:
     from app.tv_connector import get_tv_tools
+    import re
 
     tools = get_tv_tools()
     if tools is None:
         return False
 
+    tv_symbol = re.sub(r"\.[A-Z0-9]+$", "", symbol.upper())
+
     try:
-        await tools.set_symbol(symbol)
+        await tools.set_symbol(tv_symbol)
         await tools.draw_clear()
     except Exception as e:
         logger.debug(f"TV autochart: clear failed: {e}")

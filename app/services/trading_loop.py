@@ -5,6 +5,13 @@ from app.logger import logger
 from app.services.bot_status_service import BotStatusService
 
 
+def _mt5_to_tv_symbol(mt5_symbol: str) -> str:
+    import re
+    symbol = mt5_symbol.upper()
+    symbol = re.sub(r"\.[A-Z0-9]+$", "", symbol)
+    return symbol
+
+
 class TradingLoop:
     def __init__(self):
         self._status_service = BotStatusService()
@@ -76,10 +83,11 @@ class TradingLoop:
         if tools is None:
             return {}
 
+        tv_symbol = _mt5_to_tv_symbol(symbol)
         result = {"chart": None, "studies": [], "lines": [], "labels": [], "tables": [], "boxes": []}
 
         try:
-            await tools.set_symbol(symbol)
+            await tools.set_symbol(tv_symbol)
         except Exception as e:
             logger.debug(f"TV set_symbol failed for {symbol}: {e}")
 
