@@ -33,10 +33,7 @@ async def _setup_chart(tools, tv_symbol: str, tf: str) -> None:
 
 
 async def _add_indicators(tools) -> None:
-    try:
-        await tools.manage_indicator("add", "Moving Average Exponential")
-    except Exception:
-        pass
+    pass
 
 
 async def _draw_smc_zones(tools, smc: dict, mid: float, decision: str) -> None:
