@@ -366,6 +366,12 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
                 reply_markup=reply_markup if i == 0 else None,
             )
 
+            try:
+                from app.signal_bot import broadcast_signal
+                await broadcast_signal(caption, img_data if i == 0 else None)
+            except Exception:
+                pass
+
         logger.info(f"Trade signal with {len(charts)} charts sent for {symbol}")
         return True
     except Exception as e:

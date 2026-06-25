@@ -114,6 +114,16 @@ async def lifespan(app: FastAPI):
     logger.info("AI Trading Executor started")
     logger.info("=" * 60)
 
+    try:
+        from app.signal_bot import init_signal_bot
+
+        if init_signal_bot():
+            logger.info("Signal broadcast bot initialized")
+        else:
+            logger.info("Signal broadcast bot not configured")
+    except Exception as e:
+        logger.warning(f"Signal bot init failed: {e}")
+
     yield
 
     logger.info("=" * 60)
@@ -140,6 +150,13 @@ async def lifespan(app: FastAPI):
             logger.info("Telegram bot stopped")
         except Exception as e:
             logger.error(f"Error stopping Telegram bot: {e}")
+
+    try:
+        from app.signal_bot import stop_signal_bot
+
+        await stop_signal_bot()
+    except Exception as e:
+        logger.error(f"Error stopping signal bot: {e}")
 
     if mt5_ok:
         try:

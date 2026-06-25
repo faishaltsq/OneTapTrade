@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     tv_health_check_interval: int = 30
     tv_mcp_max_retries: int = 3
     tv_mcp_path: str = "tradingview-mcp"
+    signal_bot_token: Optional[str] = None
+    signal_channel_id: Optional[str] = None
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
