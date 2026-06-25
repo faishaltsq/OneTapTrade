@@ -113,7 +113,7 @@ class TVTools:
         return result is not None
 
     async def manage_indicator(self, action: str, name: str, inputs: dict = None) -> bool:
-        args = {"action": action, "name": name}
+        args = {"action": action, "indicator": name}
         if inputs:
             args["inputs"] = inputs
         result = await self._client.try_call_tool("chart_manage_indicator", args)

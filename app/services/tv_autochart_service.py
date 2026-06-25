@@ -15,12 +15,15 @@ def _map_tv_symbol(mt5_symbol: str) -> str:
 
 
 async def _setup_chart(tools, tv_symbol: str, tf: str) -> None:
-    await tools.set_symbol(tv_symbol)
     import asyncio
-    await asyncio.sleep(0.3)
-    await tools.set_timeframe(tf)
+    await tools.set_symbol(tv_symbol)
     await asyncio.sleep(1.0)
-    await tools.draw_clear()
+    await tools.set_timeframe(tf)
+    await asyncio.sleep(2.0)
+    try:
+        await tools.draw_clear()
+    except Exception:
+        pass
 
 
 async def _add_indicators(tools) -> None:
