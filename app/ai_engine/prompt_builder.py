@@ -47,6 +47,13 @@ Open position rules:
 - If open_position_state.side is BUY, do not return SELL for that symbol.
 - If open_position_state.side is SELL, do not return BUY for that symbol.
 
+TradingView chart data rules:
+- The "tv_chart_context" section contains data read from TradingView charts when available.
+- TV indicator values are additional confirmation — use them alongside MT5 indicators.
+- TV Pine script levels (support/resistance) are high-priority zones for SL and TP placement.
+- TV Pine annotations provide market context from custom indicators.
+- Cross-reference TV data with MT5 data for confluence on entries.
+
 Return BUY when:
 - H1 trend is bullish or neutral, M5 shows bullish momentum.
 - RSI not overbought on M5 (>75 still OK if momentum strong).
@@ -95,6 +102,13 @@ Open position rules:
 - Opposite direction is blocked when an open position exists on the same symbol.
 - If open_position_state.side is BUY, do not return SELL for that symbol.
 - If open_position_state.side is SELL, do not return BUY for that symbol.
+
+TradingView chart data rules:
+- The "tv_chart_context" section contains data read from TradingView charts when available.
+- TV indicator values are additional confirmation — use them alongside MT5 indicators.
+- TV Pine script levels (support/resistance) are high-priority zones for SL and TP placement.
+- TV Pine annotations provide market context from custom indicators.
+- Cross-reference TV data with MT5 data for confluence on entries.
 
 Stop Loss & Take Profit:
 - You choose stop_loss and take_profit_1 freely from market structure.
@@ -153,12 +167,19 @@ def build_user_prompt(market_payload: dict) -> str:
     style_label = settings.effective_style
     entry_tfs = "/".join(settings.effective_entry_tfs)
     hold = settings.effective_hold_time
+    tv_available = market_payload.get("tv_available", False)
+    tv_note = (
+        "\nTradingView chart data: AVAILABLE — use pine levels, indicator values, and annotations as additional confluence.\n"
+        if tv_available
+        else ""
+    )
     return (
         "Analyze the following market data and return a trading decision.\n\n"
         f"Strategy mode: {mode_label}\n"
         f"Trading style: {style_label} ({settings.risk_profile})\n"
         f"Entry TF: {entry_tfs} | Hold: {hold}\n"
         f"Risk profile: {settings.risk_profile}\n"
-        f"Minimum confidence: {settings.effective_min_confidence:.0%}\n\n"
+        f"Minimum confidence: {settings.effective_min_confidence:.0%}\n"
+        f"{tv_note}"
         f"Market data:\n{payload_json}"
     )

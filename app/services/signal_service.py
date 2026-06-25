@@ -4,7 +4,7 @@ from app.config import settings
 from app.logger import logger
 
 
-def generate_signal(symbol: Optional[str] = None) -> dict:
+def generate_signal(symbol: Optional[str] = None, tv_data: dict = None) -> dict:
     sym = symbol or settings.default_symbol
 
     logger.info(f"Generating signal for {sym}...")
@@ -114,6 +114,21 @@ def generate_signal(symbol: Optional[str] = None) -> dict:
             account_info=account_context,
         )
         market_payload.setdefault("risk_config", {})["point"] = symbol_info.get("point", 0.01)
+
+        if tv_data:
+            from app.ai_engine.tv_data_adapter import format_tv_context
+            tv_ctx = format_tv_context(
+                tv_data.get("chart"),
+                tv_data.get("studies"),
+                tv_data.get("lines"),
+                tv_data.get("labels"),
+                tv_data.get("tables"),
+                tv_data.get("boxes"),
+                sym,
+            )
+            market_payload["tv_chart_context"] = tv_ctx.get("tv_chart_context", {})
+            market_payload["tv_available"] = tv_ctx.get("tv_available", False)
+
         logger.info(f"Step 9: Market payload built — regime: {market_payload.get('overall_regime', {}).get('regime')}")
 
         logger.info("Step 10: Saving market snapshot to DB...")

@@ -71,6 +71,20 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"MT5 connected: {mt5_ok}")
 
+    tv_ok = False
+    try:
+        from app.tv_connector import start_tv_mcp
+
+        tv_ok = await start_tv_mcp()
+        if tv_ok:
+            logger.info("TradingView MCP integration active")
+        else:
+            logger.info("TradingView MCP integration unavailable — continuing without TV")
+    except Exception as e:
+        logger.warning(f"TradingView MCP init failed: {e} — continuing without TV")
+
+    logger.info(f"TV connected: {tv_ok}")
+
     try:
         from app.database.supabase_client import supabase_available
 
@@ -135,6 +149,13 @@ async def lifespan(app: FastAPI):
             logger.info("MT5 shutdown complete")
         except Exception as e:
             logger.error(f"Error shutting down MT5: {e}")
+
+    try:
+        from app.tv_connector import stop_tv_mcp
+
+        await stop_tv_mcp()
+    except Exception as e:
+        logger.error(f"Error stopping TV MCP: {e}")
 
     logger.info("AI Trading Executor shutdown complete")
     logger.info("=" * 60)

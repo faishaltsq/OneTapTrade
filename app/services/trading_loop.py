@@ -68,6 +68,59 @@ class TradingLoop:
         status["loop_running"] = self._running
         return status
 
+    async def _fetch_tv_data(self, symbol: str) -> dict:
+        from app.tv_connector import get_tv_tools
+        from app.logger import logger
+
+        tools = get_tv_tools()
+        if tools is None:
+            return {}
+
+        result = {"chart": None, "studies": [], "lines": [], "labels": [], "tables": [], "boxes": []}
+
+        try:
+            await tools.set_symbol(symbol)
+        except Exception as e:
+            logger.debug(f"TV set_symbol failed for {symbol}: {e}")
+
+        try:
+            chart = await tools.get_chart_state()
+            result["chart"] = chart.model_dump() if chart else None
+        except Exception as e:
+            logger.debug(f"TV get_chart_state failed: {e}")
+
+        try:
+            studies = await tools.get_study_values()
+            result["studies"] = [s.model_dump() for s in studies]
+        except Exception as e:
+            logger.debug(f"TV get_study_values failed: {e}")
+
+        try:
+            lines = await tools.get_pine_lines()
+            result["lines"] = [l.model_dump() for l in lines]
+        except Exception as e:
+            logger.debug(f"TV get_pine_lines failed: {e}")
+
+        try:
+            labels = await tools.get_pine_labels()
+            result["labels"] = [l.model_dump() for l in labels]
+        except Exception as e:
+            logger.debug(f"TV get_pine_labels failed: {e}")
+
+        try:
+            tables = await tools.get_pine_tables()
+            result["tables"] = tables
+        except Exception as e:
+            logger.debug(f"TV get_pine_tables failed: {e}")
+
+        try:
+            boxes = await tools.get_pine_boxes()
+            result["boxes"] = [b.model_dump() for b in boxes]
+        except Exception as e:
+            logger.debug(f"TV get_pine_boxes failed: {e}")
+
+        return result
+
     async def run_once(self) -> dict:
         symbols = settings.symbols
         results = []
@@ -106,7 +159,8 @@ class TradingLoop:
 
         from app.services.signal_service import generate_signal
 
-        signal_result = await asyncio.to_thread(generate_signal, symbol)
+        tv_data = await self._fetch_tv_data(symbol)
+        signal_result = await asyncio.to_thread(generate_signal, symbol, tv_data or None)
 
         if "error" in signal_result:
             logger.error(f"Signal generation failed: {signal_result['error']}")
