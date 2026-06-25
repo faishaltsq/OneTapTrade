@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     min_risk_reward: float = 1.5
     max_spread_points: int = 35
     trading_loop_interval_seconds: int = 0
+    auto_signal_enabled: bool = False
 
     tv_enabled: bool = True
     tv_launch_on_startup: bool = False

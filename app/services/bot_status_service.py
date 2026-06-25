@@ -9,13 +9,12 @@ _VALID_MODES = {"SIGNAL_ONLY", "SEMI_AUTO", "AUTO_DEMO", "LIVE_AUTO"}
 class BotStatusService:
     def __init__(self):
         self._lock = threading.Lock()
-        self._is_paused = False
+        self._is_paused = not settings.auto_signal_enabled
         self._mode = "SIGNAL_ONLY"
         self._active_symbol = "ALL"
         self._load_initial_status()
 
     def _load_initial_status(self):
-        self._is_paused = False
         self._mode = settings.bot_mode
         try:
             from app.database.repositories import get_bot_settings
