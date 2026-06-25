@@ -16,6 +16,7 @@ class TVMCPClient:
     def __init__(self, process_manager: TVMCPProcessManager):
         self._pm: TVMCPProcessManager = process_manager
         self._session: Optional[ClientSession] = None
+        self._stdio_ctx = None
         self._read = None
         self._write = None
         self._connected: bool = False
@@ -33,40 +34,48 @@ class TVMCPClient:
         )
 
         try:
-            ctx = stdio_client(server_params)
-            self._read, self._write = await ctx.__aenter__()
+            self._stdio_ctx = stdio_client(server_params)
+            self._read, self._write = await self._stdio_ctx.__aenter__()
             self._session = ClientSession(self._read, self._write)
             await self._session.__aenter__()
             await self._session.initialize()
             tools_result = await self._session.list_tools()
             self._tools = {t.name: {"description": t.description, "inputSchema": t.inputSchema} for t in tools_result.tools}
             self._connected = True
+            self._pm.mark_healthy()
             logger.info(f"TV MCP connected — {len(self._tools)} tools available")
             return True
         except asyncio.TimeoutError:
             logger.error("TV MCP connection timeout")
             self._connected = False
+            await self._cleanup_resources()
             return False
         except Exception as e:
             logger.error(f"TV MCP connection error: {e}")
             self._connected = False
+            await self._cleanup_resources()
             return False
 
     async def disconnect(self) -> None:
         self._connected = False
-        try:
-            if self._session:
+        self._pm.mark_unhealthy()
+        await self._cleanup_resources()
+
+    async def _cleanup_resources(self) -> None:
+        if self._session:
+            try:
                 await self._session.__aexit__(None, None, None)
-                self._session = None
-        except Exception as e:
-            logger.debug(f"Error closing MCP session: {e}")
-        try:
-            if self._write:
-                await self._write.aclose()
-                self._write = None
-        except Exception as e:
-            logger.debug(f"Error closing write stream: {e}")
+            except Exception as e:
+                logger.debug(f"Error closing MCP session: {e}")
+            self._session = None
         self._read = None
+        self._write = None
+        if self._stdio_ctx:
+            try:
+                await self._stdio_ctx.__aexit__(None, None, None)
+            except Exception as e:
+                logger.debug(f"Error closing stdio context: {e}")
+            self._stdio_ctx = None
 
     async def call_tool(self, name: str, arguments: dict = None) -> Any:
         if not self.is_connected:
