@@ -9,6 +9,7 @@ def _map_tv_symbol(mt5_symbol: str) -> str:
     TV_SYMBOL_MAP = {
         "US100": "NAS100",
         "US500": "PEPPERSTONE:US500",
+        "BRENT": "FOREXCOM:USOIL",
     }
     return TV_SYMBOL_MAP.get(symbol, symbol)
 

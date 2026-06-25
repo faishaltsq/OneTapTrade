@@ -16,6 +16,7 @@ def _mt5_to_tv_symbol(mt5_symbol: str) -> str:
         "US500": "PEPPERSTONE:US500",
         "NAS100": "NAS100",
         "GER40": "GER40",
+        "BRENT": "FOREXCOM:USOIL",
     }
     return TV_SYMBOL_MAP.get(symbol, symbol)
 
