@@ -368,8 +368,8 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
 
         try:
             from app.signal_bot import broadcast_signal
-            first_img = charts[0]["image"] if charts else None
-            ok = await broadcast_signal(signal_text, first_img)
+            m5_img = charts[-1]["image"] if charts else None
+            ok = await broadcast_signal(signal_text, m5_img)
             if ok:
                 logger.info(f"Signal broadcast to channel: {symbol} {decision_str}")
             else:

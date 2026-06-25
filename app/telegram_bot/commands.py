@@ -338,7 +338,7 @@ async def chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text("Unauthorized")
         return
 
-    await update.message.reply_text("\U0001f4ca Capturing TradingView chart...")
+    await update.message.reply_text("\U0001f4ca Capturing chart with D1 bias...")
 
     from app.tv_connector import get_tv_tools, is_tv_available
     from app.telegram_bot.bot import capture_tv_screenshot
@@ -349,6 +349,36 @@ async def chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         return
 
+    import re
+    tools = get_tv_tools()
+
+    caption_parts = []
+    for mt5_symbol in settings.symbols:
+        tv_symbol = re.sub(r"\.[A-Z0-9]+$", "", mt5_symbol.upper())
+        tv_map = {"US100": "NAS100", "US500": "PEPPERSTONE:US500", "BRENT": "FOREXCOM:USOIL"}
+        tv_symbol = tv_map.get(tv_symbol, tv_symbol)
+
+        trend_text = "N/A"
+        try:
+            from app.mt5_connector.market_data import get_candles
+            df_d1 = get_candles(mt5_symbol, timeframe="D1", count=2)
+            if df_d1 is not None and len(df_d1) >= 1:
+                last = df_d1.iloc[-1]
+                close = float(last.get("close", 0))
+                open_p = float(last.get("open", 0))
+                if close > open_p:
+                    trend_text = "\U0001f7e2 BULLISH"
+                elif close < open_p:
+                    trend_text = "\U0001f534 BEARISH"
+                else:
+                    trend_text = "\u26aa RANGING"
+        except Exception:
+            pass
+        caption_parts.append(f"{trend_text} {tv_symbol}")
+
+    bias_summary = "\n".join(caption_parts)
+    caption = f"<b>\U0001f4ca D1 Daily Bias</b>\n\n{bias_summary}"
+
     screenshot = await capture_tv_screenshot()
     if screenshot:
         from io import BytesIO
@@ -357,10 +387,12 @@ async def chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         img.name = "chart.png"
         await update.message.reply_photo(
             photo=img,
-            caption="\U0001f4ca TradingView Chart",
+            caption=caption,
+            parse_mode="HTML",
         )
     else:
-        await update.message.reply_text("\u26a0\ufe0f Failed to capture chart screenshot.")
+        await update.message.reply_text(caption)
+        await update.message.reply_text("\u26a0\ufe0f Chart screenshot unavailable. D1 bias shown above.")
 
 
 async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
