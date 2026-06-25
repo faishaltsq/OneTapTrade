@@ -374,6 +374,14 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
                 pass
 
         logger.info(f"Trade signal with {len(charts)} charts sent for {symbol}")
+
+        if not charts and decision_str in ("BUY", "SELL"):
+            try:
+                from app.signal_bot import broadcast_signal
+                await broadcast_signal(signal_text)
+            except Exception:
+                pass
+
         return True
     except Exception as e:
         logger.error(f"Failed to send trade signal: {e}")
