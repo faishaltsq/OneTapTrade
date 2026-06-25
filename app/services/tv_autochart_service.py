@@ -27,25 +27,16 @@ def _map_tv_symbol(mt5_symbol: str) -> str:
 async def _setup_chart(tools, tv_symbol: str, tf: str) -> None:
     import asyncio
     await tools.set_symbol(tv_symbol)
-    await asyncio.sleep(1.0)
+    await asyncio.sleep(1.5)
     await tools.set_timeframe(tf)
-    await asyncio.sleep(2.0)
-    try:
-        await tools.draw_clear()
-    except Exception:
-        pass
+    await asyncio.sleep(4.0)
 
 
 async def _add_indicators(tools) -> None:
-    indicators = [
-        "Relative Strength Index",
-        "Moving Average Exponential",
-    ]
-    for ind in indicators:
-        try:
-            await tools.manage_indicator("add", ind)
-        except Exception:
-            pass
+    try:
+        await tools.manage_indicator("add", "Moving Average Exponential")
+    except Exception:
+        pass
 
 
 async def _draw_smc_zones(tools, smc: dict, mid: float, decision: str) -> None:
@@ -162,6 +153,14 @@ async def draw_and_capture_multi_tf(
             await _add_indicators(tools)
         except Exception:
             pass
+
+        try:
+            await tools.draw_clear()
+        except Exception:
+            pass
+
+        import asyncio
+        await asyncio.sleep(0.5)
 
         try:
             await _draw_smc_zones(tools, smc, mid, decision)
