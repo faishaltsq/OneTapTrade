@@ -475,7 +475,7 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
     risk_result = risk_result or {}
     decision_str = _enum_value(getattr(decision, "decision", "HOLD"))
     confidence = getattr(decision, "confidence", 0.0) or 0.0
-    reason = getattr(decision, "main_reason", "") or getattr(decision, "final_comment", "") or "No clear trade setup."
+    reason = getattr(decision, "main_reason", "") or getattr(decision, "final_comment", "") or ""
     d_emoji = _decision_emoji(decision_str)
     c_emoji = _confidence_emoji(confidence)
 
@@ -483,26 +483,56 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
     d1_bias = major_trend.get("bias", "D1_UNCLEAR")
     h1_bias = major_trend.get("h1_bias", "NONE")
     hierarchy = major_trend.get("d1_h1_hierarchy", "")
+    h1_alignment = major_trend.get("h1_alignment", "NONE")
+    align_emoji = "\u2705" if h1_alignment == "ALIGNED" else ("\u26a0\ufe0f" if h1_alignment == "CONTRARY" else "\u2795")
+
+    entry_plan = getattr(decision, "entry_plan", None)
+    ep = entry_plan
+    entry_type = _enum_value(getattr(ep, "entry_type", None)) if ep else None
+    entry_price = getattr(ep, "preferred_entry_price", None) if ep else None
+    stop_loss = getattr(ep, "stop_loss", None) if ep else None
+    tp1 = getattr(ep, "take_profit_1", None) if ep else None
+    tp2 = getattr(ep, "take_profit_2", None) if ep else None
+    rr1 = getattr(ep, "risk_reward_to_tp1", None) if ep else None
+
+    current_price = payload.get("current_price", {})
+    bid = current_price.get("bid")
+    ask = current_price.get("ask")
 
     lines = [
-        f"<b>{d_emoji} {_escape_html(symbol)} — {_escape_html(d1_bias)} | H1 {_escape_html(h1_bias)}</b>",
-        f"{_escape_html(hierarchy)}",
-        f"<b>Decision:</b> {_escape_html(decision_str)} | {c_emoji} <b>{confidence:.0%}</b>",
+        f"{d_emoji} <b>{_escape_html(symbol)}</b> — {_escape_html(d1_bias)} {align_emoji} H1 {_escape_html(h1_bias)}",
+        f"<i>{_escape_html(hierarchy)}</i>",
+        "",
     ]
-    lines.extend(_format_bias_map(decision, payload))
-    lines.extend(_format_price(payload))
-    lines.extend(_format_momentum(payload))
-    lines.extend(_format_smc(payload))
-    lines.extend(_format_orderflow(payload))
 
     if decision_str in ("BUY", "SELL"):
-        lines.extend(_format_trade_plan(decision))
-        approved = risk_result.get("approved")
-        risk_reason = risk_result.get("reason", "N/A")
-        status = "✅ Approved" if approved else "❌ Blocked"
-        lines.extend(["\n<b>🛡️ Risk Check</b>", f"{status}: {_escape_html(str(risk_reason))}"])
+        lines.append(f"<b>Signal:</b> {_escape_html(decision_str)} {_escape_html(entry_type or '')} | {c_emoji} <b>{confidence:.0%}</b>")
+        lines.append("")
+        lines.append("<b>-- Trade Plan --</b>")
+        if entry_price:
+            lines.append(f"Entry: <code>{_fmt_num(entry_price)}</code>")
+        lines.append(f"SL: <code>{_fmt_num(stop_loss)}</code>")
+        lines.append(f"TP1: <code>{_fmt_num(tp1)}</code>" + (f"  R:R {rr1:.1f}" if rr1 else ""))
+        if tp2:
+            lines.append(f"TP2: <code>{_fmt_num(tp2)}</code>")
+    else:
+        lines.append(f"<b>Signal: {_escape_html(decision_str)}</b> | {c_emoji} {confidence:.0%}")
 
-    lines.extend(["\n<b>📝 Read</b>", f"<i>{_escape_html(reason)}</i>"])
+    if reason:
+        lines.append("")
+        lines.append(f"\U0001f4ac <i>{_escape_html(reason)}</i>")
+
+    price_line = f"\U0001f4ca Bid {_fmt_num(bid)} / Ask {_fmt_num(ask)}"
+    m5_ind = _indicators(payload, "entry_timeframe")
+    rsi = m5_ind.get("rsi_14")
+    rsi_str = _fmt_alert_num(rsi) if rsi else "N/A"
+    lines.append(f"{price_line} | RSI {rsi_str}")
+
+    approved = risk_result.get("approved")
+    if not approved and decision_str in ("BUY", "SELL"):
+        risk_reason = risk_result.get("reason", "")
+        lines.append(f"\u274c Blocked: {_escape_html(str(risk_reason))}")
+
     return "\n".join(lines)
 
 

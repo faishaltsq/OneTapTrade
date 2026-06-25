@@ -341,6 +341,7 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
             stop_loss=stop_loss,
             take_profit=take_profit,
             timeframes=tfs,
+            market_payload=market_payload,
         )
 
         if not charts:
