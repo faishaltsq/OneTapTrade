@@ -1,3 +1,6 @@
+import asyncio
+import os
+import subprocess
 from typing import Optional
 
 from app.tv_connector.errors import (
@@ -14,6 +17,53 @@ _tv_process_manager: Optional[TVMCPProcessManager] = None
 _tv_client: Optional[TVMCPClient] = None
 _tv_tools: Optional[TVTools] = None
 _tv_enabled: bool = False
+
+
+async def _launch_tradingview() -> None:
+    from app.logger import logger
+    from app.config import settings
+
+    tv_paths = []
+    localappdata = os.environ.get("LOCALAPPDATA", "")
+    programfiles = os.environ.get("PROGRAMFILES", "")
+    windir = os.environ.get("WINDIR", "")
+
+    if localappdata:
+        tv_paths.append(os.path.join(localappdata, "TradingView", "TradingView.exe"))
+    if programfiles:
+        try:
+            import glob
+            patterns = [
+                os.path.join(programfiles, "WindowsApps", "TradingView*", "TradingView.exe"),
+            ]
+            for pattern in patterns:
+                matches = glob.glob(pattern)
+                tv_paths.extend(matches)
+        except Exception:
+            pass
+
+    tv_exe = None
+    for p in tv_paths:
+        if os.path.exists(p):
+            tv_exe = p
+            break
+
+    if tv_exe is None:
+        logger.warning("TradingView executable not found — skip auto-launch")
+        return
+
+    try:
+        port = settings.tv_debug_port
+        logger.info(f"Launching TradingView with debug port {port}: {tv_exe}")
+        subprocess.Popen(
+            [tv_exe, f"--remote-debugging-port={port}"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        await asyncio.sleep(3)
+        logger.info("TradingView launched")
+    except Exception as e:
+        logger.warning(f"Failed to launch TradingView: {e}")
 
 __all__ = [
     "TVConnectionError",
@@ -35,6 +85,9 @@ async def start_tv_mcp() -> bool:
     if not settings.tv_enabled:
         logger.info("TV integration disabled in config")
         return False
+
+    if settings.tv_launch_on_startup:
+        await _launch_tradingview()
 
     _tv_process_manager = TVMCPProcessManager()
     if not await _tv_process_manager.start():
