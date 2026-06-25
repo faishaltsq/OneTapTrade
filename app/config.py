@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     max_spread_points: int = 35
     trading_loop_interval_seconds: int = 0
 
+    tv_enabled: bool = True
+    tv_launch_on_startup: bool = False
+    tv_debug_port: int = 9222
+    tv_health_check_interval: int = 30
+    tv_mcp_max_retries: int = 3
+    tv_mcp_path: str = "tradingview-mcp"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     @field_validator("mt5_login", mode="before")
@@ -148,6 +155,15 @@ class Settings(BaseSettings):
         if self.trading_loop_interval_seconds > 0:
             return self.trading_loop_interval_seconds
         return self.risk_profile_config["loop_interval"]
+
+    @property
+    def tv_mcp_server_path(self) -> str:
+        import os
+        return os.path.join(self.tv_mcp_path, "src", "server.js")
+
+    @property
+    def tv_mcp_node_cmd(self) -> str:
+        return "node"
 
 
 settings = Settings()
