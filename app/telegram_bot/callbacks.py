@@ -780,21 +780,12 @@ async def menu_analyze_callback(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
 
     try:
-        import asyncio
-        from app.telegram_bot.bot import send_trade_signal
-
         symbols = settings.symbols
         for symbol in symbols:
             try:
                 result = await trading_loop._run_symbol(symbol, force=True)
-                ai_decision = result.get("ai_decision")
-                risk_result = result.get("risk_result", {})
-                decision_id = result.get("decision_id", str(uuid.uuid4()))
-
-                if ai_decision is not None:
-                    await send_trade_signal(ai_decision, risk_result, decision_id, result.get("market_payload"))
-                else:
-                    await send_message(f"\u26aa {symbol}: No signal generated.")
+                if "error" in result:
+                    await send_message(f"\u26a0\ufe0f {symbol}: {result['error']}")
             except Exception as e:
                 logger.error(f"Analyze failed for {symbol}: {e}")
                 await send_message(f"\u26a0\ufe0f {symbol}: Analysis error — {e}")

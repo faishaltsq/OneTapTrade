@@ -206,7 +206,11 @@ class TradingLoop:
         )
 
         if is_hold:
-            await self._send_market_update(ai_decision, symbol, signal_result.get("market_payload"))
+            try:
+                from app.telegram_bot.bot import send_trade_signal
+                await send_trade_signal(ai_decision, risk_result, decision_id or "", signal_result.get("market_payload"))
+            except Exception as e:
+                logger.error(f"Failed to send HOLD signal: {e}")
             try:
                 from app.database.repositories import log_bot_event
                 log_bot_event(event_type="market_update", message=f"HOLD {symbol}")
