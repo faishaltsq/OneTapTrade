@@ -226,6 +226,66 @@ async def send_main_menu(text: str = None) -> bool:
     return await send_message(header, reply_markup=build_main_menu_keyboard(is_paused=paused, mode=mode, active_symbol=active))
 
 
+def _build_limit_recommendation(market_payload: dict | None) -> str:
+    if not market_payload:
+        return ""
+    smc = market_payload.get("smc", {})
+    major_trend = market_payload.get("major_trend", {})
+    price = market_payload.get("current_price", {})
+    mid = price.get("mid", 0)
+
+    lines = []
+    d1_bias = major_trend.get("bias", "")
+    allowed = major_trend.get("allowed_directions", [])
+
+    order_blocks = smc.get("order_blocks", {})
+    demand = order_blocks.get("demand", []) or []
+    supply = order_blocks.get("supply", []) or []
+
+    if "BUY" in allowed and demand:
+        nearest = demand[-1] if isinstance(demand[-1], dict) else {}
+        low = nearest.get("low")
+        high = nearest.get("high")
+        if low and high and mid > 0:
+            zone = f"{low} – {high}"
+            lines.append(f"\u2191 <b>BUY LIMIT</b> zone: {zone}")
+            if low > mid:
+                lines.append(f"   Wait for retrace to demand block")
+            else:
+                lines.append(f"   Price inside demand zone — wait for confirmation")
+            lines.append(f"   SL: below {low} | TP: next supply block")
+
+    if "SELL" in allowed and supply:
+        nearest = supply[-1] if isinstance(supply[-1], dict) else {}
+        high_val = nearest.get("high")
+        low_val = nearest.get("low")
+        if high_val and low_val and mid > 0:
+            zone = f"{low_val} – {high_val}"
+            lines.append(f"\u2193 <b>SELL LIMIT</b> zone: {zone}")
+            if high_val < mid:
+                lines.append(f"   Wait for retrace to supply block")
+            else:
+                lines.append(f"   Price inside supply zone — wait for confirmation")
+            lines.append(f"   SL: above {high_val} | TP: next demand block")
+
+    if not lines:
+        choch = smc.get("choch", {})
+        choch_dir = choch.get("direction", "")
+        if choch_dir and choch_dir != "NONE":
+            direction = "Bullish" if "BULL" in str(choch_dir).upper() else "Bearish"
+            lines.append(f"\u26a0 CHoCH: {direction} — potential reversal, wait for confirmation")
+
+        liquidity = smc.get("liquidity_levels", []) or []
+        if liquidity:
+            liq = liquidity[0] if isinstance(liquidity[0], dict) else {}
+            liq_price = liq.get("price")
+            liq_type = liq.get("type", "level")
+            if liq_price:
+                lines.append(f"\U0001f4cd Liquidity at {liq_price} ({liq_type}) — price likely to target this")
+
+    return "\n".join(lines) if lines else ""
+
+
 async def send_trade_signal(decision, risk_result: dict, decision_id: str, market_payload: dict | None = None) -> bool:
     if not settings.telegram_bot_token or not settings.telegram_allowed_chat_id:
         logger.warning("Cannot send trade signal — bot not configured")
@@ -263,12 +323,24 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
 
         from app.services.tv_autochart_service import draw_and_capture_multi_tf
 
+        if decision_str in ("BUY", "SELL"):
+            tfs = ["H1", "M5", "M15"]
+            iface_label = {"H1": "\U0001f4ca H1 — Context", "M5": "\U0001f4ca M5 — Entry", "M15": "\U0001f4ca M15 — Confirmation"}
+        else:
+            tfs = ["M5"]
+            iface_label = {"M5": "\U0001f4ca M5 — Market View"}
+
+            limit_recs = _build_limit_recommendation(market_payload)
+            if limit_recs:
+                signal_text += f"\n\n<b>\U0001f4cd Limit Rekomendasi (SMC+AI):</b>\n{limit_recs}"
+
         charts = await draw_and_capture_multi_tf(
             mt5_symbol=symbol,
             decision=decision_str or "HOLD",
             entry_price=entry_price,
             stop_loss=stop_loss,
             take_profit=take_profit,
+            timeframes=tfs,
         )
 
         if not charts:
@@ -279,7 +351,7 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
         for i, chart in enumerate(charts):
             img_data = chart["image"]
             tf = chart["timeframe"]
-            tf_label = {"H1": "\U0001f4ca H1 — Context", "M5": "\U0001f4ca M5 — Entry", "M15": "\U0001f4ca M15 — Confirmation"}.get(tf, f"\U0001f4ca {tf}")
+            tf_label = iface_label.get(tf, f"\U0001f4ca {tf}")
 
             caption = f"{tf_label}\n{signal_text}" if i == 0 else tf_label
 

@@ -9,6 +9,7 @@ async def draw_and_capture_multi_tf(
     entry_price: Optional[float],
     stop_loss: Optional[float],
     take_profit: Optional[float],
+    timeframes: list[str] = None,
 ) -> list[dict]:
     import asyncio, re
     from app.tv_connector import get_tv_tools
@@ -18,7 +19,8 @@ async def draw_and_capture_multi_tf(
         return []
 
     tv_symbol = re.sub(r"\.[A-Z0-9]+$", "", mt5_symbol.upper())
-    timeframes = ["H1", "M5", "M15"]
+    if timeframes is None:
+        timeframes = ["H1", "M5", "M15"]
 
     results = []
 
