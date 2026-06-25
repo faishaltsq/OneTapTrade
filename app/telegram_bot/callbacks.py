@@ -709,6 +709,50 @@ async def menu_chart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         await _edit_message(update, "\u26a0\ufe0f Error capturing chart.")
 
 
+async def menu_analyze_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    chat_id = str(update.effective_chat.id) if update.effective_chat else ""
+    if chat_id != settings.telegram_allowed_chat_id:
+        await query.answer("Unauthorized", show_alert=True)
+        return
+
+    trading_loop = get_trading_loop()
+    if trading_loop is None:
+        await _edit_message(update, "\u26a0\ufe0f Trading loop not running.")
+        await query.answer()
+        return
+
+    await _edit_message(update, "\U0001f50d Analyzing market across all pairs...")
+    await query.answer()
+
+    try:
+        import asyncio
+        from app.telegram_bot.bot import send_trade_signal
+
+        symbols = settings.symbols
+        for symbol in symbols:
+            try:
+                result = await trading_loop._run_symbol(symbol)
+                ai_decision = result.get("ai_decision")
+                risk_result = result.get("risk_result", {})
+                decision_id = result.get("decision_id", str(uuid.uuid4()))
+
+                if ai_decision is not None:
+                    await send_trade_signal(ai_decision, risk_result, decision_id, result.get("market_payload"))
+                else:
+                    await send_message(f"\u26aa {symbol}: No signal generated.")
+            except Exception as e:
+                logger.error(f"Analyze failed for {symbol}: {e}")
+                await send_message(f"\u26a0\ufe0f {symbol}: Analysis error — {e}")
+
+        await send_main_menu()
+    except Exception as e:
+        logger.error(f"Analyze market failed: {e}")
+        await _edit_message(update, f"\u26a0\ufe0f Analysis error: {e}")
+
+
 async def menu_back_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if query is None:
@@ -810,6 +854,7 @@ def get_callback_handlers() -> list:
         CallbackQueryHandler(menu_risk_trade_100_cb, pattern=r"^MENU_RISK_TRADE_100$"),
         CallbackQueryHandler(menu_back_cb, pattern=r"^MENU_BACK$"),
         CallbackQueryHandler(menu_chart_callback, pattern=r"^MENU_CHART$"),
+        CallbackQueryHandler(menu_analyze_callback, pattern=r"^MENU_ANALYZE$"),
         CallbackQueryHandler(menu_symbol_all_cb, pattern=r"^MENU_SYMBOL_ALL$"),
         CallbackQueryHandler(menu_symbol_next_cb, pattern=r"^MENU_SYMBOL_NEXT$"),
     ]

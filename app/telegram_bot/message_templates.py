@@ -53,6 +53,7 @@ def build_main_menu_keyboard(is_paused: bool = True, mode: str = "SIGNAL_ONLY", 
         ],
         [
             InlineKeyboardButton("\U0001f4f8 Chart", callback_data="MENU_CHART"),
+            InlineKeyboardButton("\U0001f50d Analyze", callback_data="MENU_ANALYZE"),
         ],
         [
             InlineKeyboardButton(f"\U0001f4ca All Pairs", callback_data="MENU_SYMBOL_ALL"),

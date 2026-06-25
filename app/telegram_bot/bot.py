@@ -238,6 +238,7 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
     try:
         symbol = risk_result.get("symbol", settings.default_symbol)
         signal_text = format_signal_message(decision, risk_result, symbol, market_payload=market_payload)
+        chat_id = settings.telegram_allowed_chat_id
 
         reply_markup = None
         if settings.is_semi_auto and risk_result.get("approved"):
@@ -258,26 +259,27 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
         _decision_symbols[decision_id] = symbol
         _pending_decisions[decision_id] = decision
 
-        sent = await send_message(signal_text, reply_markup=reply_markup)
-        if sent:
-            logger.info(f"Trade signal sent for decision {decision_id}")
+        screenshot = await capture_tv_screenshot()
 
-        try:
-            screenshot = await capture_tv_screenshot()
-            if screenshot and settings.telegram_allowed_chat_id:
-                from io import BytesIO
+        if screenshot:
+            from io import BytesIO
 
-                img = BytesIO(screenshot)
-                img.name = "chart.png"
-                await _application.bot.send_photo(
-                    chat_id=settings.telegram_allowed_chat_id,
-                    photo=img,
-                    caption="\U0001f4ca TradingView Chart",
-                )
-        except Exception as e:
-            logger.warning(f"Failed to send TV screenshot: {e}")
-
-        return sent
+            img = BytesIO(screenshot)
+            img.name = "chart.png"
+            await _application.bot.send_photo(
+                chat_id=chat_id,
+                photo=img,
+                caption=signal_text,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+            logger.info(f"Trade signal with chart sent for decision {decision_id}")
+            return True
+        else:
+            sent = await send_message(signal_text, reply_markup=reply_markup)
+            if sent:
+                logger.info(f"Trade signal sent (no chart) for decision {decision_id}")
+            return sent
     except Exception as e:
         logger.error(f"Failed to send trade signal: {e}")
         return False
