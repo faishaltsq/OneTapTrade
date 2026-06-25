@@ -22,8 +22,8 @@ async def draw_signal_on_chart(
     try:
         await tools.set_symbol(tv_symbol)
         await tools.draw_clear()
-    except Exception as e:
-        logger.debug(f"TV autochart: clear failed: {e}")
+    except Exception:
+        pass
 
     if decision.upper() == "BUY":
         entry_color = "#00FF00"

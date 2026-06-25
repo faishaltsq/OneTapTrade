@@ -87,10 +87,16 @@ class TVMCPClient:
                 if isinstance(result.content, list) and len(result.content) > 0:
                     first = result.content[0]
                     if hasattr(first, "text"):
-                        error_text = first.text
+                        raw = first.text
+                        import json as _json
+                        try:
+                            parsed = _json.loads(raw)
+                            error_text = parsed.get("error", raw[:200])
+                        except Exception:
+                            error_text = raw[:200]
                     else:
-                        error_text = str(first)
-                raise TVToolError(f"Tool '{name}' returned error: {error_text}")
+                        error_text = str(first)[:200]
+                raise TVToolError(error_text)
             content = result.content
             if isinstance(content, list) and len(content) > 0:
                 first = content[0]
@@ -123,8 +129,8 @@ class TVMCPClient:
             logger.debug(f"TV tool '{name}' timed out after {timeout}s")
             return None
         except (TVConnectionError, TVToolError) as e:
-            msg = str(e).split("\n")[0]
-            logger.debug(f"TV tool '{name}' failed: {msg}")
+            msg = str(e)[:120]
+            logger.debug(f"TV tool '{name}': {msg}")
             return None
         except Exception as e:
             logger.debug(f"TV tool '{name}' unexpected error: {type(e).__name__}: {e}")
