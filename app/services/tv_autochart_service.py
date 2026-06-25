@@ -66,7 +66,7 @@ async def draw_breakeven_update(symbol: str, new_sl: float, side: str) -> bool:
         return False
 
     try:
-        await tools.draw_text(new_sl, "SL->BE", "#FFAA00")
+        await tools.draw_text_on_chart(new_sl, "SL->BE", "#FFAA00")
         logger.info(f"TV autochart: breakeven annotation at {new_sl} on {symbol}")
         return True
     except Exception as e:

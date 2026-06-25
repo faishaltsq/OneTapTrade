@@ -141,24 +141,54 @@ class TVTools:
 
     # ── drawing ───────────────────────────────────────────────────────────
 
-    async def draw_shape(self, shape_type: str, **kwargs) -> Optional[str]:
-        args = {"type": shape_type, **kwargs}
+    async def draw_shape(self, shape: str, point: dict, point2: dict = None,
+                         overrides: dict = None, text: str = None) -> Optional[dict]:
+        args = {"shape": shape, "point": point}
+        if point2:
+            args["point2"] = point2
+        if overrides:
+            import json
+            args["overrides"] = json.dumps(overrides)
+        if text:
+            args["text"] = text
         result = await self._client.try_call_tool("draw_shape", args)
         if isinstance(result, dict):
-            return result.get("id")
+            return result
         return None
 
-    async def draw_horizontal_line(self, price: float, text: str = "", color: str = "#FF0000") -> Optional[str]:
-        return await self.draw_shape("horizontal_line", price=price, text=text, color=color)
+    async def draw_horizontal_line(self, price: float, text: str = "", color: str = "#FF0000") -> Optional[dict]:
+        import time
+        overrides = {"linecolor": color}
+        if text:
+            overrides["text"] = text
+        return await self.draw_shape(
+            shape="horizontal_line",
+            point={"time": int(time.time()), "price": price},
+            overrides=overrides,
+        )
 
-    async def draw_trend_line(self, x1: float, y1: float, x2: float, y2: float, color: str = "#FF0000") -> Optional[str]:
-        return await self.draw_shape("trend_line", x1=x1, y1=y1, x2=x2, y2=y2, color=color)
+    async def draw_trend_line(self, time1: int, price1: float, time2: int, price2: float,
+                              color: str = "#FF0000") -> Optional[dict]:
+        overrides = {"linecolor": color}
+        return await self.draw_shape(
+            shape="trend_line",
+            point={"time": time1, "price": price1},
+            point2={"time": time2, "price": price2},
+            overrides=overrides,
+        )
 
-    async def draw_text(self, price: float, text: str, color: str = "#FFFFFF") -> Optional[str]:
-        return await self.draw_shape("text", price=price, text=text, color=color)
+    async def draw_text_on_chart(self, price: float, text: str, color: str = "#FFFFFF") -> Optional[dict]:
+        import time
+        overrides = {"textcolor": color}
+        return await self.draw_shape(
+            shape="text",
+            point={"time": int(time.time()), "price": price},
+            text=text,
+            overrides=overrides,
+        )
 
     async def draw_clear(self) -> bool:
-        result = await self._client.try_call_tool("draw_clear")
+        result = await self._client.try_call_tool("draw_clear", {})
         return result is not None
 
     # ── alerts ────────────────────────────────────────────────────────────
