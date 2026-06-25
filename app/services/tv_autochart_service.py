@@ -34,7 +34,7 @@ async def _setup_chart(tools, tv_symbol: str, tf: str) -> None:
     if not ok:
         logger.debug(f"TV set_timeframe timeout for {tv_symbol} -> {tf}")
         return
-    await asyncio.sleep(3.0)
+    await asyncio.sleep(5.0)
 
 
 async def _add_indicators(tools) -> None:
@@ -161,8 +161,7 @@ async def draw_and_capture_multi_tf(
         except Exception:
             pass
 
-        import asyncio
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1.0)
 
         try:
             await _draw_smc_zones(tools, smc, mid, decision)
