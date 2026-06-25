@@ -74,8 +74,16 @@ async def stop_tv_mcp() -> None:
 
 
 def get_tv_tools() -> Optional[TVTools]:
-    return _tv_tools if _tv_enabled else None
+    if not _tv_enabled or _tv_tools is None:
+        return None
+    if _tv_client is None or not _tv_client.is_connected:
+        return None
+    return _tv_tools
 
 
 def is_tv_available() -> bool:
-    return _tv_enabled and _tv_tools is not None
+    if not _tv_enabled or _tv_tools is None:
+        return False
+    if _tv_client is None or not _tv_client.is_connected:
+        return False
+    return True

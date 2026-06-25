@@ -82,36 +82,50 @@ class TVMCPClient:
             raise TVConnectionError("TV MCP client not connected")
         try:
             result = await self._session.call_tool(name, arguments or {})
+            if getattr(result, "isError", False):
+                error_text = ""
+                if isinstance(result.content, list) and len(result.content) > 0:
+                    first = result.content[0]
+                    if hasattr(first, "text"):
+                        error_text = first.text
+                    else:
+                        error_text = str(first)
+                raise TVToolError(f"Tool '{name}' returned error: {error_text}")
             content = result.content
-            if isinstance(result.content, list) and len(result.content) > 0:
-                first = result.content[0]
+            if isinstance(content, list) and len(content) > 0:
+                first = content[0]
                 if hasattr(first, "text"):
                     text = first.text
                     try:
                         return json.loads(text)
                     except (json.JSONDecodeError, TypeError):
                         return text
-                return first
-            if hasattr(result.content, "text"):
+                return str(first)
+            if hasattr(content, "text"):
                 try:
-                    return json.loads(result.content.text)
+                    return json.loads(content.text)
                 except (json.JSONDecodeError, TypeError):
-                    return result.content.text
-            return result.content
+                    return content.text
+            if hasattr(result, "structuredContent") and result.structuredContent is not None:
+                return result.structuredContent
+            return content
         except TVConnectionError:
             raise
+        except TVToolError:
+            raise
         except Exception as e:
-            raise TVToolError(f"Tool '{name}' failed: {e}") from e
+            raise TVToolError(f"Tool '{name}' failed: {type(e).__name__}: {e}") from e
 
     async def try_call_tool(self, name: str, arguments: dict = None, timeout: float = 5.0) -> Optional[Any]:
         try:
             return await asyncio.wait_for(self.call_tool(name, arguments), timeout=timeout)
         except asyncio.TimeoutError:
-            logger.warning(f"TV tool '{name}' timed out after {timeout}s")
+            logger.debug(f"TV tool '{name}' timed out after {timeout}s")
             return None
         except (TVConnectionError, TVToolError) as e:
-            logger.warning(f"TV tool '{name}' failed: {e}")
+            msg = str(e).split("\n")[0]
+            logger.debug(f"TV tool '{name}' failed: {msg}")
             return None
         except Exception as e:
-            logger.warning(f"TV tool '{name}' unexpected error: {e}")
+            logger.debug(f"TV tool '{name}' unexpected error: {type(e).__name__}: {e}")
             return None
