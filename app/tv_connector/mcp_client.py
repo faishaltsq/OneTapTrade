@@ -1,0 +1,108 @@
+import asyncio
+import json
+import os
+from typing import Any, Optional
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+from app.config import settings
+from app.logger import logger
+from app.tv_connector.errors import TVConnectionError, TVToolError
+from app.tv_connector.process_manager import TVMCPProcessManager
+
+
+class TVMCPClient:
+    def __init__(self, process_manager: TVMCPProcessManager):
+        self._pm: TVMCPProcessManager = process_manager
+        self._session: Optional[ClientSession] = None
+        self._read = None
+        self._write = None
+        self._connected: bool = False
+        self._tools: dict[str, dict] = {}
+
+    @property
+    def is_connected(self) -> bool:
+        return self._connected and self._session is not None
+
+    async def connect(self) -> bool:
+        server_params = StdioServerParameters(
+            command=settings.tv_mcp_node_cmd,
+            args=[os.path.abspath(settings.tv_mcp_server_path)],
+            env=None,
+        )
+
+        try:
+            ctx = stdio_client(server_params)
+            self._read, self._write = await ctx.__aenter__()
+            self._session = ClientSession(self._read, self._write)
+            await self._session.__aenter__()
+            await self._session.initialize()
+            tools_result = await self._session.list_tools()
+            self._tools = {t.name: {"description": t.description, "inputSchema": t.inputSchema} for t in tools_result.tools}
+            self._connected = True
+            logger.info(f"TV MCP connected — {len(self._tools)} tools available")
+            return True
+        except asyncio.TimeoutError:
+            logger.error("TV MCP connection timeout")
+            self._connected = False
+            return False
+        except Exception as e:
+            logger.error(f"TV MCP connection error: {e}")
+            self._connected = False
+            return False
+
+    async def disconnect(self) -> None:
+        self._connected = False
+        try:
+            if self._session:
+                await self._session.__aexit__(None, None, None)
+                self._session = None
+        except Exception as e:
+            logger.debug(f"Error closing MCP session: {e}")
+        try:
+            if self._write:
+                await self._write.aclose()
+                self._write = None
+        except Exception as e:
+            logger.debug(f"Error closing write stream: {e}")
+        self._read = None
+
+    async def call_tool(self, name: str, arguments: dict = None) -> Any:
+        if not self.is_connected:
+            raise TVConnectionError("TV MCP client not connected")
+        try:
+            result = await self._session.call_tool(name, arguments or {})
+            content = result.content
+            if isinstance(result.content, list) and len(result.content) > 0:
+                first = result.content[0]
+                if hasattr(first, "text"):
+                    text = first.text
+                    try:
+                        return json.loads(text)
+                    except (json.JSONDecodeError, TypeError):
+                        return text
+                return first
+            if hasattr(result.content, "text"):
+                try:
+                    return json.loads(result.content.text)
+                except (json.JSONDecodeError, TypeError):
+                    return result.content.text
+            return result.content
+        except TVConnectionError:
+            raise
+        except Exception as e:
+            raise TVToolError(f"Tool '{name}' failed: {e}") from e
+
+    async def try_call_tool(self, name: str, arguments: dict = None, timeout: float = 5.0) -> Optional[Any]:
+        try:
+            return await asyncio.wait_for(self.call_tool(name, arguments), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning(f"TV tool '{name}' timed out after {timeout}s")
+            return None
+        except (TVConnectionError, TVToolError) as e:
+            logger.warning(f"TV tool '{name}' failed: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"TV tool '{name}' unexpected error: {e}")
+            return None
