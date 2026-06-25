@@ -27,27 +27,20 @@ async def _launch_tradingview() -> None:
         logger.info("TradingView already running with CDP — skip launch")
         return
 
-    tv_paths = []
-    localappdata = os.environ.get("LOCALAPPDATA", "")
-    programfiles = os.environ.get("PROGRAMFILES", "")
-
-    if localappdata:
-        tv_paths.append(os.path.join(localappdata, "TradingView", "TradingView.exe"))
-    if programfiles:
-        try:
-            import glob
-            tv_paths.extend(glob.glob(os.path.join(programfiles, "WindowsApps", "TradingView*", "TradingView.exe")))
-        except Exception:
-            pass
-
     tv_exe = None
-    for p in tv_paths:
-        if os.path.exists(p):
-            tv_exe = p
-            break
+
+    if settings.tv_exe_path and os.path.exists(settings.tv_exe_path):
+        tv_exe = settings.tv_exe_path
 
     if tv_exe is None:
-        logger.warning("TradingView executable not found — skip auto-launch")
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        if localappdata:
+            p = os.path.join(localappdata, "TradingView", "TradingView.exe")
+            if os.path.exists(p):
+                tv_exe = p
+
+    if tv_exe is None:
+        logger.warning("TradingView executable not found — set TV_EXE_PATH in .env")
         return
 
     try:
