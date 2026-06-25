@@ -9,7 +9,15 @@ def _mt5_to_tv_symbol(mt5_symbol: str) -> str:
     import re
     symbol = mt5_symbol.upper()
     symbol = re.sub(r"\.[A-Z0-9]+$", "", symbol)
-    return symbol
+
+    TV_SYMBOL_MAP = {
+        "US100": "NAS100",
+        "US30": "US30",
+        "US500": "PEPPERSTONE:US500",
+        "NAS100": "NAS100",
+        "GER40": "GER40",
+    }
+    return TV_SYMBOL_MAP.get(symbol, symbol)
 
 
 class TradingLoop:

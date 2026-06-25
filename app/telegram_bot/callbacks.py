@@ -11,6 +11,16 @@ from app.telegram_bot.bot import _pending_decisions, _decision_symbols, get_trad
 from app.telegram_bot.message_templates import build_main_menu_keyboard, build_settings_keyboard, format_settings_message
 
 
+def _map_tv_symbol(mt5_symbol: str) -> str:
+    import re
+    symbol = re.sub(r"\.[A-Z0-9]+$", "", mt5_symbol.upper())
+    TV_SYMBOL_MAP = {
+        "US100": "NAS100",
+        "US500": "PEPPERSTONE:US500",
+    }
+    return TV_SYMBOL_MAP.get(symbol, symbol)
+
+
 def _parse_decision_id(data: str) -> str:
     parts = data.split(":", 1)
     return parts[1] if len(parts) > 1 else ""
@@ -695,7 +705,7 @@ async def menu_chart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
 
     for mt5_symbol in symbols:
-        tv_symbol = re.sub(r"\.[A-Z0-9]+$", "", mt5_symbol.upper())
+        tv_symbol = _map_tv_symbol(mt5_symbol)
 
         try:
             await tools.set_symbol(tv_symbol)

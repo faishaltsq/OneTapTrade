@@ -3,6 +3,16 @@ from typing import Optional
 from app.logger import logger
 
 
+def _map_tv_symbol(mt5_symbol: str) -> str:
+    import re
+    symbol = re.sub(r"\.[A-Z0-9]+$", "", mt5_symbol.upper())
+    TV_SYMBOL_MAP = {
+        "US100": "NAS100",
+        "US500": "PEPPERSTONE:US500",
+    }
+    return TV_SYMBOL_MAP.get(symbol, symbol)
+
+
 async def draw_and_capture_multi_tf(
     mt5_symbol: str,
     decision: str,
@@ -11,14 +21,15 @@ async def draw_and_capture_multi_tf(
     take_profit: Optional[float],
     timeframes: list[str] = None,
 ) -> list[dict]:
-    import asyncio, re
+    import asyncio
     from app.tv_connector import get_tv_tools
 
     tools = get_tv_tools()
     if tools is None:
         return []
 
-    tv_symbol = re.sub(r"\.[A-Z0-9]+$", "", mt5_symbol.upper())
+    tv_symbol = _map_tv_symbol(mt5_symbol)
+
     if timeframes is None:
         timeframes = ["H1", "M5", "M15"]
 
