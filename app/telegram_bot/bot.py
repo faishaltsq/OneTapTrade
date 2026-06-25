@@ -324,11 +324,11 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
         from app.services.tv_autochart_service import draw_and_capture_multi_tf
 
         if decision_str in ("BUY", "SELL"):
-            tfs = ["H1", "M5", "M15"]
-            iface_label = {"H1": "\U0001f4ca H1 — Context", "M5": "\U0001f4ca M5 — Entry", "M15": "\U0001f4ca M15 — Confirmation"}
+            tfs = ["D1", "H1", "M5"]
+            iface_label = {"D1": "\U0001f4ca D1 \u2014 Daily Trend", "H1": "\U0001f4ca H1 \u2014 Execution Bias", "M5": "\U0001f4ca M5 \u2014 Entry Trigger"}
         else:
             tfs = ["M5"]
-            iface_label = {"M5": "\U0001f4ca M5 — Market View"}
+            iface_label = {"M5": "\U0001f4ca M5 \u2014 Market View"}
 
             limit_recs = _build_limit_recommendation(market_payload)
             if limit_recs:
@@ -366,15 +366,16 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
                 reply_markup=reply_markup if i == 0 else None,
             )
 
-            try:
-                from app.signal_bot import broadcast_signal
-                ok = await broadcast_signal(caption, img_data if i == 0 else None)
-                if ok:
-                    logger.info(f"Signal broadcast to channel: {symbol} {decision_str}")
-                else:
-                    logger.warning(f"Signal broadcast FAILED for {symbol}")
-            except Exception as e:
-                logger.warning(f"Signal broadcast error: {e}")
+        try:
+            from app.signal_bot import broadcast_signal
+            first_img = charts[0]["image"] if charts else None
+            ok = await broadcast_signal(signal_text, first_img)
+            if ok:
+                logger.info(f"Signal broadcast to channel: {symbol} {decision_str}")
+            else:
+                logger.warning(f"Signal broadcast FAILED for {symbol}")
+        except Exception as e:
+            logger.warning(f"Signal broadcast error: {e}")
 
         logger.info(f"Trade signal with {len(charts)} charts sent for {symbol}")
 
