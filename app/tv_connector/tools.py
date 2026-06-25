@@ -101,11 +101,11 @@ class TVTools:
     # ── chart control ─────────────────────────────────────────────────────
 
     async def set_symbol(self, symbol: str) -> bool:
-        result = await self._client.try_call_tool("chart_set_symbol", {"symbol": symbol})
+        result = await self._client.try_call_tool("chart_set_symbol", {"symbol": symbol}, timeout=10.0)
         return result is not None
 
     async def set_timeframe(self, timeframe: str) -> bool:
-        result = await self._client.try_call_tool("chart_set_timeframe", {"timeframe": timeframe})
+        result = await self._client.try_call_tool("chart_set_timeframe", {"timeframe": timeframe}, timeout=10.0)
         return result is not None
 
     async def set_chart_type(self, chart_type: str) -> bool:

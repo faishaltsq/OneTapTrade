@@ -26,9 +26,14 @@ def _map_tv_symbol(mt5_symbol: str) -> str:
 
 async def _setup_chart(tools, tv_symbol: str, tf: str) -> None:
     import asyncio
-    await tools.set_symbol(tv_symbol)
+    ok = await tools.set_symbol(tv_symbol)
+    if not ok:
+        logger.debug(f"TV set_symbol timeout for {tv_symbol}")
     await asyncio.sleep(2.0)
-    await tools.set_timeframe(tf)
+    ok = await tools.set_timeframe(tf)
+    if not ok:
+        logger.debug(f"TV set_timeframe timeout for {tv_symbol} -> {tf}")
+        return
     await asyncio.sleep(3.0)
 
 
