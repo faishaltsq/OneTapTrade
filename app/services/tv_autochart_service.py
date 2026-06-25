@@ -27,9 +27,9 @@ def _map_tv_symbol(mt5_symbol: str) -> str:
 async def _setup_chart(tools, tv_symbol: str, tf: str) -> None:
     import asyncio
     await tools.set_symbol(tv_symbol)
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(2.0)
     await tools.set_timeframe(tf)
-    await asyncio.sleep(4.0)
+    await asyncio.sleep(3.0)
 
 
 async def _add_indicators(tools) -> None:
