@@ -33,3 +33,5 @@ enable_autotrading.py
 
 *.sqlite3
 *.db
+
+tradingview-mcp/
