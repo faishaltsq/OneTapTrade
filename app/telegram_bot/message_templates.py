@@ -52,6 +52,9 @@ def build_main_menu_keyboard(is_paused: bool = True, mode: str = "SIGNAL_ONLY", 
             InlineKeyboardButton("\u2699\ufe0f Settings", callback_data="MENU_SETTINGS"),
         ],
         [
+            InlineKeyboardButton("\U0001f4f8 Chart", callback_data="MENU_CHART"),
+        ],
+        [
             InlineKeyboardButton(f"\U0001f4ca All Pairs", callback_data="MENU_SYMBOL_ALL"),
             InlineKeyboardButton(f"\U0001f504 Next Pair", callback_data="MENU_SYMBOL_NEXT"),
         ],
@@ -194,6 +197,13 @@ def format_status_message(status_data: dict) -> str:
         lines.append(f"<b>Open Positions:</b> {positions_count}")
     else:
         lines.append("\n\u26a0\ufe0f <b>MT5 not connected</b>")
+
+    from app.tv_connector import is_tv_available
+
+    if is_tv_available():
+        lines.append(f"\n\U0001f4ca <b>TradingView:</b> \u2705 Connected")
+    else:
+        lines.append(f"\n\U0001f4ca <b>TradingView:</b> \u274c Not Connected")
 
     if last_signal_time:
         lines.append(f"\n<b>Last Signal:</b> <i>{_escape_html(str(last_signal_time))}</i>")

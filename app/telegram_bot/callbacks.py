@@ -670,6 +670,45 @@ async def menu_risk_trade_100_cb(update: Update, context: ContextTypes.DEFAULT_T
     await menu_risk_trade_callback(update, 1.0)
 
 
+async def menu_chart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    chat_id = str(update.effective_chat.id) if update.effective_chat else ""
+    if chat_id != settings.telegram_allowed_chat_id:
+        await query.answer("Unauthorized", show_alert=True)
+        return
+
+    from app.tv_connector import is_tv_available
+    from app.telegram_bot.bot import capture_tv_screenshot, _application
+
+    if not is_tv_available():
+        await _edit_message(update, "\u26a0\ufe0f TradingView not connected.")
+        await query.answer()
+        return
+
+    await _edit_message(update, "\U0001f4ca Capturing chart...")
+    await query.answer()
+
+    try:
+        screenshot = await capture_tv_screenshot()
+        if screenshot:
+            from io import BytesIO
+
+            img = BytesIO(screenshot)
+            img.name = "chart.png"
+            await _application.bot.send_photo(
+                chat_id=query.message.chat_id,
+                photo=img,
+                caption="\U0001f4ca TradingView Chart",
+            )
+        else:
+            await _edit_message(update, "\u26a0\ufe0f Failed to capture chart.")
+    except Exception as e:
+        logger.warning(f"Send chart failed: {e}")
+        await _edit_message(update, "\u26a0\ufe0f Error capturing chart.")
+
+
 async def menu_back_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if query is None:
@@ -770,6 +809,7 @@ def get_callback_handlers() -> list:
         CallbackQueryHandler(menu_risk_trade_050_cb, pattern=r"^MENU_RISK_TRADE_050$"),
         CallbackQueryHandler(menu_risk_trade_100_cb, pattern=r"^MENU_RISK_TRADE_100$"),
         CallbackQueryHandler(menu_back_cb, pattern=r"^MENU_BACK$"),
+        CallbackQueryHandler(menu_chart_callback, pattern=r"^MENU_CHART$"),
         CallbackQueryHandler(menu_symbol_all_cb, pattern=r"^MENU_SYMBOL_ALL$"),
         CallbackQueryHandler(menu_symbol_next_cb, pattern=r"^MENU_SYMBOL_NEXT$"),
     ]

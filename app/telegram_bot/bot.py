@@ -8,6 +8,19 @@ from app.config import settings
 from app.logger import logger
 from app.telegram_bot.message_templates import build_main_menu_keyboard, format_signal_message
 
+async def capture_tv_screenshot() -> Optional[bytes]:
+    try:
+        from app.tv_connector import get_tv_tools
+
+        tools = get_tv_tools()
+        if tools is None:
+            return None
+        return await tools.capture_screenshot("chart")
+    except Exception as e:
+        logger.debug(f"TV screenshot capture failed: {e}")
+        return None
+
+
 _application: Optional[Application] = None
 _pending_decisions: dict = {}
 _decision_symbols: dict[str, str] = {}
@@ -88,6 +101,7 @@ async def _set_bot_commands() -> None:
                 BotCommand("pause", "Stop new trades"),
                 BotCommand("resume", "Resume new trades"),
                 BotCommand("settings", "Show current settings"),
+                BotCommand("chart", "Capture TradingView chart"),
             ]
         )
     except Exception as e:
@@ -247,6 +261,22 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
         sent = await send_message(signal_text, reply_markup=reply_markup)
         if sent:
             logger.info(f"Trade signal sent for decision {decision_id}")
+
+        try:
+            screenshot = await capture_tv_screenshot()
+            if screenshot and settings.telegram_allowed_chat_id:
+                from io import BytesIO
+
+                img = BytesIO(screenshot)
+                img.name = "chart.png"
+                await _application.bot.send_photo(
+                    chat_id=settings.telegram_allowed_chat_id,
+                    photo=img,
+                    caption="\U0001f4ca TradingView Chart",
+                )
+        except Exception as e:
+            logger.warning(f"Failed to send TV screenshot: {e}")
+
         return sent
     except Exception as e:
         logger.error(f"Failed to send trade signal: {e}")

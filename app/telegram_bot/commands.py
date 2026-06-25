@@ -332,6 +332,37 @@ async def last_signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     await _reply(update, text)
 
 
+async def chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = str(update.effective_chat.id)
+    if chat_id != settings.telegram_allowed_chat_id:
+        await update.message.reply_text("Unauthorized")
+        return
+
+    await update.message.reply_text("\U0001f4ca Capturing TradingView chart...")
+
+    from app.tv_connector import get_tv_tools, is_tv_available
+    from app.telegram_bot.bot import capture_tv_screenshot
+
+    if not is_tv_available():
+        await update.message.reply_text(
+            "\u26a0\ufe0f TradingView not connected. Make sure TV Desktop is running with debug port 9222."
+        )
+        return
+
+    screenshot = await capture_tv_screenshot()
+    if screenshot:
+        from io import BytesIO
+
+        img = BytesIO(screenshot)
+        img.name = "chart.png"
+        await update.message.reply_photo(
+            photo=img,
+            caption="\U0001f4ca TradingView Chart",
+        )
+    else:
+        await update.message.reply_text("\u26a0\ufe0f Failed to capture chart screenshot.")
+
+
 async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _check_allowed(update):
         await _reply(update, "<b>\u26a0\ufe0f Unauthorized</b>")
@@ -425,4 +456,5 @@ def get_command_handlers() -> list:
         CommandHandler("close_pending", close_pending_command),
         CommandHandler("last_signal", last_signal_command),
         CommandHandler("settings", settings_command),
+        CommandHandler("chart", chart_command),
     ]
