@@ -23,22 +23,20 @@ async def _launch_tradingview() -> None:
     from app.logger import logger
     from app.config import settings
 
+    if await _quick_cdp_check():
+        logger.info("TradingView already running with CDP — skip launch")
+        return
+
     tv_paths = []
     localappdata = os.environ.get("LOCALAPPDATA", "")
     programfiles = os.environ.get("PROGRAMFILES", "")
-    windir = os.environ.get("WINDIR", "")
 
     if localappdata:
         tv_paths.append(os.path.join(localappdata, "TradingView", "TradingView.exe"))
     if programfiles:
         try:
             import glob
-            patterns = [
-                os.path.join(programfiles, "WindowsApps", "TradingView*", "TradingView.exe"),
-            ]
-            for pattern in patterns:
-                matches = glob.glob(pattern)
-                tv_paths.extend(matches)
+            tv_paths.extend(glob.glob(os.path.join(programfiles, "WindowsApps", "TradingView*", "TradingView.exe")))
         except Exception:
             pass
 
@@ -60,10 +58,20 @@ async def _launch_tradingview() -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        await asyncio.sleep(3)
+        await asyncio.sleep(4)
         logger.info("TradingView launched")
     except Exception as e:
         logger.warning(f"Failed to launch TradingView: {e}")
+
+
+async def _quick_cdp_check() -> bool:
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            resp = await client.get("http://localhost:9222/json/version", timeout=2.0)
+            return resp.status_code == 200
+    except Exception:
+        return False
 
 __all__ = [
     "TVConnectionError",

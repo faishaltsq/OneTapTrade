@@ -92,6 +92,10 @@ class TradingLoop:
         if tools is None:
             return {}
 
+        from app.services.tv_autochart_service import _quick_cdp_check
+        if not await _quick_cdp_check():
+            return {}
+
         tv_symbol = _mt5_to_tv_symbol(symbol)
         result = {"chart": None, "studies": [], "lines": [], "labels": [], "tables": [], "boxes": []}
 

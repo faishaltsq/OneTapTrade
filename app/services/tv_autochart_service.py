@@ -3,6 +3,16 @@ from typing import Any, Optional
 from app.logger import logger
 
 
+async def _quick_cdp_check() -> bool:
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            resp = await client.get("http://localhost:9222/json/version", timeout=2.0)
+            return resp.status_code == 200
+    except Exception:
+        return False
+
+
 def _map_tv_symbol(mt5_symbol: str) -> str:
     import re
     symbol = re.sub(r"\.[A-Z0-9]+$", "", mt5_symbol.upper())
@@ -126,6 +136,10 @@ async def draw_and_capture_multi_tf(
 
     tools = get_tv_tools()
     if tools is None:
+        return []
+
+    if not await _quick_cdp_check():
+        logger.debug("TV CDP not reachable — skipping multi-TF capture")
         return []
 
     tv_symbol = _map_tv_symbol(mt5_symbol)
