@@ -30,13 +30,26 @@ async def _setup_chart(tools, tv_symbol: str, tf: str) -> None:
     if not ok:
         logger.debug(f"TV set_symbol timeout for {tv_symbol}")
     await asyncio.sleep(2.0)
-    await tools.set_timeframe("1D")
-    await asyncio.sleep(1.0)
     ok = await tools.set_timeframe(tf)
-    if not ok:
-        logger.debug(f"TV set_timeframe timeout for {tv_symbol} -> {tf}")
-        return
     await asyncio.sleep(3.0)
+
+    try:
+        await tools._client.try_call_tool("ui_evaluate", {
+            "expression": """
+(function() {
+    try {
+        var api = window.TradingViewApi._activeChartWidgetWV.value();
+        if (api && api.chart) {
+            api.chart().priceScale('right').applyOptions({ mode: 0 });
+            return 'price_scale_enabled';
+        }
+        return 'no_api';
+    } catch(e) { return 'err: '+e.message; }
+})()
+"""
+        }, timeout=3.0)
+    except Exception:
+        pass
 
 
 async def _add_indicators(tools) -> None:

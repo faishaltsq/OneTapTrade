@@ -762,51 +762,6 @@ async def menu_chart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await send_message(f"\u2705 All {len(symbols)} pairs captured.")
 
 
-async def menu_clear_draw_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None:
-        return
-    chat_id = str(update.effective_chat.id) if update.effective_chat else ""
-    if chat_id != settings.telegram_allowed_chat_id:
-        await query.answer("Unauthorized", show_alert=True)
-        return
-
-    from app.tv_connector import get_tv_tools
-
-    tools = get_tv_tools()
-    if tools is None:
-        await _edit_message(update, "\u26a0\ufe0f TradingView not connected.")
-        await query.answer()
-        return
-
-    import asyncio
-    success = 0
-    failed_list = []
-    symbols = settings.symbols
-    await _edit_message(update, f"\U0001f5d1 Clearing drawings on {len(symbols)} pairs...")
-    await query.answer()
-
-    for mt5_symbol in symbols:
-        tv_symbol = _map_tv_symbol(mt5_symbol)
-        try:
-            await tools.set_symbol(tv_symbol)
-            await asyncio.sleep(4.0)
-            ok = await tools.draw_clear()
-            await asyncio.sleep(0.5)
-            if ok:
-                success += 1
-            else:
-                failed_list.append(tv_symbol)
-        except Exception:
-            failed_list.append(tv_symbol)
-
-    msg = f"\U0001f5d1 Cleared: {success}/{len(symbols)}"
-    if failed_list:
-        msg += f"\nFailed: {', '.join(failed_list[:5])}"
-    await send_message(msg)
-    await send_main_menu()
-
-
 async def menu_analyze_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if query is None:
@@ -943,7 +898,6 @@ def get_callback_handlers() -> list:
         CallbackQueryHandler(menu_risk_trade_100_cb, pattern=r"^MENU_RISK_TRADE_100$"),
         CallbackQueryHandler(menu_back_cb, pattern=r"^MENU_BACK$"),
         CallbackQueryHandler(menu_chart_callback, pattern=r"^MENU_CHART$"),
-        CallbackQueryHandler(menu_clear_draw_callback, pattern=r"^MENU_CLEAR_DRAW$"),
         CallbackQueryHandler(menu_analyze_callback, pattern=r"^MENU_ANALYZE$"),
         CallbackQueryHandler(menu_symbol_all_cb, pattern=r"^MENU_SYMBOL_ALL$"),
         CallbackQueryHandler(menu_symbol_next_cb, pattern=r"^MENU_SYMBOL_NEXT$"),
