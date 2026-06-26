@@ -256,7 +256,7 @@ def test_high_news_risk_forces_no_trade_for_supported_payload_shapes():
         assert any(adj["factor"] == "news_risk_high" for adj in result["adjustments"])
 
 
-def test_unknown_rr_forces_no_trade():
+def test_unknown_rr_penalizes_but_does_not_force_no_trade_pre_ai():
     payload = _payload("bullish")
     payload["entry_plan_context"]["risk_reward_to_tp1"] = None
     payload["entry_plan_context"]["entry_available"] = True
@@ -265,9 +265,10 @@ def test_unknown_rr_forces_no_trade():
 
     result = score_smc_setup(payload, risk_profile="MEDIUM")
 
-    assert result["pre_ai_decision"] == "NO_TRADE"
-    assert result["forced_no_trade"] is True
+    assert result["forced_no_trade"] is False
     assert any(adj["factor"] == "risk_reward_unknown" for adj in result["adjustments"])
+    assert any("R:R unknown" in w for w in result["weaknesses"])
+    assert result["final_score"] < 80
 
 
 def test_malformed_swings_do_not_crash_and_skip_premium_discount():

@@ -320,6 +320,25 @@ def generate_signal(symbol: Optional[str] = None, tv_data: dict = None) -> dict:
             f"conf={ai_decision.confidence:.2f} | allows_exec={ai_decision.execution_permission.ai_allows_execution}"
         )
 
+        if ai_decision.decision.value in ("BUY", "SELL"):
+            ep = getattr(ai_decision, "entry_plan", None)
+            if ep:
+                market_payload["entry_plan_context"]["risk_reward_to_tp1"] = getattr(ep, "risk_reward_to_tp1", None)
+                market_payload["entry_plan_context"]["entry_available"] = getattr(ep, "preferred_entry_price", None) is not None
+                market_payload["entry_plan_context"]["sl_available"] = getattr(ep, "stop_loss", None) is not None
+                market_payload["entry_plan_context"]["tp_available"] = getattr(ep, "take_profit_1", None) is not None
+            try:
+                smc_probability = score_smc_setup(market_payload, settings.risk_profile)
+                market_payload["smc_probability"] = smc_probability
+                logger.info(
+                    f"SMC post-AI re-score [{sym}]: "
+                    f"decision={smc_probability.get('pre_ai_decision')} "
+                    f"score={smc_probability.get('final_score')} "
+                    f"quality={smc_probability.get('setup_quality')}"
+                )
+            except Exception as e:
+                logger.error(f"SMC post-AI re-score failed for {sym}: {e}")
+
         logger.info("Step 13: Saving AI decision to DB...")
         decision_row = None
         try:

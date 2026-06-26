@@ -199,9 +199,8 @@ def score_smc_setup(market_payload: dict, risk_profile: str | None = None) -> di
     rr = entry_plan.get("risk_reward_to_tp1")
     min_rr = _minimum_risk_reward(payload, profile)
     if rr is None:
-        score += _add(adjustments, "risk_reward_unknown", -100, "R:R unknown, cannot verify minimum")
-        risk_notes.append("R:R unknown, cannot verify minimum")
-        forced_no_trade = True
+        score += _add(adjustments, "risk_reward_unknown", -20, "R:R unknown, pending AI entry plan")
+        weaknesses.append("R:R unknown, pending AI entry plan")
     else:
         try:
             rr_val = float(rr)
