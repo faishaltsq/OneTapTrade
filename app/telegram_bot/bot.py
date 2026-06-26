@@ -334,6 +334,7 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
         )
 
         if not charts:
+            await send_message(signal_text, reply_markup=reply_markup)
             try:
                 from app.signal_bot import broadcast_signal
                 ok = await broadcast_signal(signal_text)
