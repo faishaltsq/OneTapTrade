@@ -932,12 +932,12 @@ def test_signal_message_renders_smc_probability_block():
 
     message = format_signal_message(decision, {"approved": False, "symbol": "EURUSD.m"}, "EURUSD.m", payload)
 
-    assert "EURUSD.m \u2014 SMC ANALYSIS" in message
+    assert "EURUSD.m" in message
     assert "Probability" in message
     assert "Score: 72%" in message
-    assert "Decision" in message
     assert "WAIT" in message
     assert "Manual confirmation required" in message
+    assert "Multi-Timeframe Analysis" in message
 
 
 @pytest.mark.asyncio

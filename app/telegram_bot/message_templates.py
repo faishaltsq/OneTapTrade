@@ -546,10 +546,8 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
     payload = market_payload or {}
     risk_result = risk_result or {}
     smc_probability_lines = _format_smc_probability_block(symbol, payload, risk_result)
-    if smc_probability_lines:
-        semantic = (payload.get("smc_probability") or {}).get("pre_ai_decision", "")
-        if semantic not in {"BUY_SETUP", "SELL_SETUP"}:
-            return "\n".join(smc_probability_lines)
+    smc_score = (payload.get("smc_probability") or {})
+    smc_semantic = str(smc_score.get("pre_ai_decision") or "").upper()
     decision_str = _enum_value(getattr(decision, "decision", "HOLD"))
     confidence = getattr(decision, "confidence", 0.0) or 0.0
     reason = getattr(decision, "main_reason", "") or getattr(decision, "final_comment", "") or ""
@@ -727,7 +725,7 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
             lines.append("")
             lines.append(f"\U0001f4ac <i>{_escape_html(reason[:400])}</i>")
 
-    if smc_probability_lines and decision_str in ("BUY", "SELL"):
+    if smc_probability_lines:
         lines.append("")
         lines.extend(smc_probability_lines[1:])
 
