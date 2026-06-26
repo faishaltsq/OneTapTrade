@@ -1,6 +1,39 @@
 import json
 
 from app.config import settings
+from app.logger import logger
+
+
+def build_failure_fewshot(symbol: str = None) -> str:
+    try:
+        from app.database.repositories import get_failure_cases
+        cases = get_failure_cases(symbol=symbol, limit=5)
+        if not cases:
+            return "Tidak ada histori kegagalan dengan kemiripan struktural yang signifikan untuk setup ini. Evaluasi berdasarkan confluence murni."
+
+        blocks = []
+        for i, case in enumerate(cases, 1):
+            elem = case.get("primary_failure_element", "N/A")
+            reason = case.get("failure_reason", "N/A")
+            score = case.get("ai_confluence_score", "N/A")
+            pnl = case.get("pnl_r", "N/A")
+            struct = case.get("structure_snapshot", {})
+            struct_str = json.dumps(struct, indent=None)[:200] if isinstance(struct, dict) else str(struct)[:200]
+
+            blocks.append(
+                f"---\n"
+                f"Contoh Gagal #{i}:\n"
+                f"- Kondisi struktur: {struct_str}\n"
+                f"- Skor confluence AI saat itu: {score}/100\n"
+                f"- Hasil aktual: LOSS ({pnl}R)\n"
+                f"- Diagnosis kegagalan: {reason}\n"
+                f"- Elemen gagal: {elem}\n"
+                f"---"
+            )
+        return "\n".join(blocks)
+    except Exception as e:
+        logger.debug(f"build_failure_fewshot error: {e}")
+        return "Tidak ada histori kegagalan tersedia. Evaluasi berdasarkan confluence murni."
 
 
 _SMC_AI_BASE = """You are an AI trading execution analysis engine for a MetaTrader 5 trading system.
@@ -36,26 +69,51 @@ Stop Loss & Take Profit rules:
 - Set TP1 at the best realistic target within the profile's TP range.
 - Minimum R:R must be met: SCALPING 1.2, DAYTRADE 1.8, SWING 2.5.
 
-SMC (Smart Money Concepts) rules:
-- The "smc" section in the market data contains SMC analysis. Use it for context.
-- ORDER BLOCKS: supply blocks (bearish OB) act as resistance, demand blocks (bullish OB) act as support.
-  - For BUY: place SL below the nearest demand block (or below recent swing low if no OB).
-  - For SELL: place SL above the nearest supply block (or above recent swing high if no OB).
-- Prefer LIMIT entries at valid high-probability SMC zones when price can retrace.
-  - BUY_LIMIT should be inside a demand order block below current price.
-  - SELL_LIMIT should be inside a supply order block above current price.
-  - MARKET only when confidence is above 50% and setup is trend-following.
-  - Near-third entries (entry close to current price) have tight SL risk. Use conservative TP ratio 1:1.5 to 1:2.
-  - Premium entries (entry deep in OB zone) can target SMC levels (liquidity, FVG, opposite OB) for TP.
-- FAIR VALUE GAPS (FVG): price often returns to fill FVGs. Target TP at unfilled FVG or opposite liquidity.
-- LIQUIDITY LEVELS: equal highs/lows where stops cluster. Price hunts these levels.
-  - Avoid placing SL exactly at liquidity levels (will get hunted).
-  - Target TP just before a liquidity level (high probability take-profit zone).
-- CHoCH (Change of Character): when a swing structure break is detected, it signals potential reversal.
-  - Bullish CHoCH (higher low) = potential reversal to upside.
-  - Bearish CHoCH (lower high) = potential reversal to downside.
-  - When CHoCH is present, give higher confidence to counter-trend entries.
-- Swing highs/lows mark key structural levels. Use as SL placement zones.
+SMC (Smart Money Concepts) rules — DEFINITIONS (use these, not others):
+- BOS (Break of Structure): close candle breaks swing high/low in trend direction, confirms continuation.
+- CHoCH (Change of Character): close candle breaks swing high/low against trend, potential reversal.
+- Order Block (OB): last candle/zone before impulsive move causing BOS/CHoCH. Bullish OB = last bearish candle before strong up. Bearish OB = last bullish candle before strong down.
+- FVG (Fair Value Gap): gap between candle 1 and 3 (wick 1 doesn't overlap wick 3) from impulsive candle 2.
+- Liquidity Sweep: price breaks swing high/low (stop hunt) then immediate rejection reversal.
+- Valid entry zone: OB/FVG that is FRESH (unmitigated) and aligned with HTF bias.
+
+SMC validation rules:
+- Do NOT consider CHoCH valid from a thin single candle close; require displacement (large body, not just long wick).
+- OB is stronger if overlapping with HVN (High Volume Node) or LVN breakout origin.
+- Entry timing must NOT be "price touches zone" — require: (a) rejection candle with strong close in bias direction, OR (b) CHoCH on lower timeframe inside the zone.
+- CHoCH WITHOUT prior liquidity sweep is WEAKER than CHoCH after sweep — sweep = institutional stop hunt, no sweep = probably just retracement.
+
+Additional SMC validation:
+- The "smc" section contains pre-detected structure. Assess QUALITY and VALIDITY, do not re-detect.
+- ORDER BLOCKS: supply (bearish OB) = resistance, demand (bullish OB) = support.
+  - For BUY: SL below nearest demand block (or swing low).
+  - For SELL: SL above nearest supply block (or swing high).
+- Prefer LIMIT entries at valid SMC zones.
+  - MARKET only when confidence > 50% and trend-following.
+- FVG: price returns to fill. Target TP at unfilled FVG or opposite liquidity.
+- LIQUIDITY: equal highs/lows where stops cluster. Price hunts these.
+  - Do NOT place SL exactly at liquidity levels (gets hunted).
+  - Target TP just before liquidity level.
+- CHoCH: bullish (higher low) = potential reversal up. Bearish (lower high) = potential reversal down.
+
+=====================================================
+FAILURE LEARNING — compare current setup with past losses
+=====================================================
+You will be given examples of historical setups that ended in LOSS (see "CONTOH SETUP YANG GAGAL" below, if any).
+
+Rules when processing failure examples:
+1. Compare current setup structure with the "failure element" in each example.
+2. If current setup has ONE OR MORE matching elements with past failures (e.g. "CHoCH without liquidity sweep"), lower confidence proportionally.
+3. If strong match (>0.85 similarity) AND failure element directly matches current conditions, consider HOLD even if other confluence looks strong.
+4. MUST mention in "main_reason" if you detect similarity with past failures.
+5. If no relevant failure examples given, evaluate based on pure confluence.
+
+Do NOT ignore failure patterns just because other confluence looks high. Repeated failure patterns are strong signals.
+
+=====================================================
+CONTOH SETUP YANG GAGAL DI MASA LALU — MIRIP DENGAN SETUP SAAT INI
+=====================================================
+{failure_fewshot}
 
 Open position rules:
 - Same-direction add-ons are allowed when an open position exists on the same symbol.
@@ -96,6 +154,9 @@ IMPORTANT: For BUY or SELL, you must include entry_plan.stop_loss, entry_plan.ta
 IMPORTANT: For BUY or SELL, set execution_permission.ai_allows_execution to true with a brief reason.
 
 {style_block}
+
+FAILURE LEARNING — past setups that ended in LOSS:
+{failure_fewshot}
 
 Return only valid JSON."""
 
@@ -150,6 +211,9 @@ IMPORTANT: For BUY or SELL, set execution_permission.ai_allows_execution to true
 
 {style_block}
 
+FAILURE LEARNING — past setups that ended in LOSS:
+{failure_fewshot}
+
 Return only valid JSON."""
 
 
@@ -181,11 +245,12 @@ def _style_block_for_profile(profile: str) -> str:
     return _STYLE_BLOCKS[style]
 
 
-def build_system_prompt() -> str:
+def build_system_prompt(symbol: str = None) -> str:
     style_block = _style_block_for_profile(settings.risk_profile)
+    fewshot = build_failure_fewshot(symbol)
     if settings.strategy_mode == "AI_ONLY":
-        return _AI_ONLY_BASE.format(style_block=style_block)
-    return _SMC_AI_BASE.format(style_block=style_block)
+        return _AI_ONLY_BASE.format(style_block=style_block, failure_fewshot=fewshot)
+    return _SMC_AI_BASE.format(style_block=style_block, failure_fewshot=fewshot)
 
 
 def build_user_prompt(market_payload: dict) -> str:

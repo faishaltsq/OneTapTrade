@@ -331,3 +331,78 @@ def log_bot_event(event_type: str, message: str = None, payload: dict = None) ->
     except Exception as e:
         logger.error(f"Failed to log bot event: {e}")
         return None
+
+
+# ── failure_cases ────────────────────────────────────────────────────────────
+
+def get_loss_trades(limit: int = 20) -> list:
+    supabase = get_supabase()
+    if supabase is None:
+        return []
+    try:
+        result = (
+            supabase.table("trades")
+            .select("*, ai_decisions(*)")
+            .eq("status", "CLOSED")
+            .lt("profit", 0)
+            .order("closed_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return result.data or []
+    except Exception as e:
+        logger.error(f"Failed to get loss trades: {e}")
+        return []
+
+
+def get_failure_cases(symbol: str = None, limit: int = 5) -> list:
+    supabase = get_supabase()
+    if supabase is None:
+        return []
+    try:
+        query = supabase.table("failure_cases").select("*")
+        if symbol:
+            query = query.eq("symbol", symbol)
+        result = query.order("created_at", desc=True).limit(limit).execute()
+        return result.data or []
+    except Exception as e:
+        logger.error(f"Failed to get failure cases: {e}")
+        return []
+
+
+def save_failure_case(data: dict) -> dict | None:
+    supabase = get_supabase()
+    if supabase is None:
+        return None
+    try:
+        result = supabase.table("failure_cases").insert(data).execute()
+        rows = result.data
+        if not rows:
+            return None
+        return rows[0]
+    except Exception as e:
+        logger.error(f"Failed to save failure case: {e}")
+        return None
+
+
+def mark_trade_post_mortem(trade_id: str, failure_reason: str = None) -> dict | None:
+    supabase = get_supabase()
+    if supabase is None:
+        return None
+    try:
+        updates = {"post_mortem_done": True}
+        if failure_reason:
+            updates["failure_reason"] = failure_reason
+        result = (
+            supabase.table("trades")
+            .update(updates)
+            .eq("id", trade_id)
+            .execute()
+        )
+        rows = result.data
+        if not rows:
+            return None
+        return rows[0]
+    except Exception as e:
+        logger.error(f"Failed to mark post-mortem: {e}")
+        return None

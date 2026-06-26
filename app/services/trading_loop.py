@@ -21,6 +21,59 @@ def _mt5_to_tv_symbol(mt5_symbol: str) -> str:
     return TV_SYMBOL_MAP.get(symbol, symbol)
 
 
+def _check_closed_trades_for_post_mortem() -> None:
+    try:
+        from app.database.repositories import get_open_trades, update_trade_status
+        from app.mt5_connector.positions import get_open_positions
+
+        open_db_trades = get_open_trades()
+        if not open_db_trades:
+            return
+
+        mt5_tickets = set()
+        try:
+            positions = get_open_positions(None)
+            mt5_tickets = {p.get("ticket") for p in positions if p.get("ticket")}
+        except Exception:
+            return
+
+        for trade in open_db_trades:
+            ticket = trade.get("mt5_ticket")
+            trade_id = trade.get("id")
+            if not ticket or not trade_id:
+                continue
+
+            if ticket not in mt5_tickets:
+                try:
+                    import MetaTrader5 as mt5
+                    deals = mt5.history_deals_get(ticket=ticket)
+                    close_price = None
+                    profit = None
+                    if deals:
+                        for d in deals:
+                            if d.entry == mt5.DEAL_ENTRY_OUT:
+                                close_price = d.price
+                                profit = d.profit
+                                break
+
+                    update_trade_status(
+                        trade_id=trade_id,
+                        status="CLOSED",
+                        close_price=close_price,
+                        profit=profit,
+                    )
+                    logger.info(f"Trade {trade_id} closed (ticket {ticket}, profit={profit})")
+
+                    if profit is not None and float(profit) < 0:
+                        from app.ai_engine.post_mortem import process_loss_trade
+                        updated_trade = {**trade, "close_price": close_price, "profit": profit}
+                        process_loss_trade(updated_trade)
+                except Exception as e:
+                    logger.debug(f"Failed to process closed trade {trade_id}: {e}")
+    except Exception as e:
+        logger.debug(f"Post-mortem check error: {e}")
+
+
 class TradingLoop:
     def __init__(self):
         self._status_service = BotStatusService()
@@ -164,6 +217,11 @@ class TradingLoop:
                     logger.info(f"Pending order cap enforced for {sym}: {cap_result}")
         except Exception as e:
             logger.error(f"Pending order cap enforcement failed: {e}")
+
+        try:
+            await asyncio.to_thread(_check_closed_trades_for_post_mortem)
+        except Exception as e:
+            logger.debug(f"Post-mortem check failed: {e}")
 
         for symbol in symbols:
             result = await self._run_symbol(symbol)

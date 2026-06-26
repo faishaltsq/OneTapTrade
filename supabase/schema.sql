@@ -118,3 +118,33 @@ CREATE TABLE IF NOT EXISTS bot_events (
 
 CREATE INDEX idx_bot_events_type_created
     ON bot_events (event_type, created_at DESC);
+
+-- ── failure_cases: hasil post-mortem dari trade LOSS ──────────────────────
+CREATE TABLE IF NOT EXISTS failure_cases (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    trade_id UUID REFERENCES trades(id),
+    ai_decision_id UUID REFERENCES ai_decisions(id),
+    symbol TEXT NOT NULL,
+    side TEXT,
+    entry_price NUMERIC,
+    stop_loss NUMERIC,
+    take_profit NUMERIC,
+    close_price NUMERIC,
+    pnl_r NUMERIC,
+    structure_snapshot JSONB,
+    ai_reasoning TEXT,
+    ai_confluence_score NUMERIC,
+    primary_failure_element TEXT,
+    failure_reason TEXT,
+    secondary_factors JSONB DEFAULT '[]'::jsonb,
+    actionable_rule TEXT,
+    confidence TEXT DEFAULT 'medium',
+    confidence_note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_failure_cases_symbol ON failure_cases (symbol);
+CREATE INDEX idx_failure_cases_created ON failure_cases (created_at DESC);
+
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS failure_reason TEXT;
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS post_mortem_done BOOLEAN DEFAULT FALSE;

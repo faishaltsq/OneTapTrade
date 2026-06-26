@@ -73,7 +73,8 @@ def get_ai_decision(market_payload: dict) -> AIDecisionResponse:
         timeout=45,
     )
 
-    system_prompt = build_system_prompt()
+    symbol = market_payload.get("symbol", settings.default_symbol)
+    system_prompt = build_system_prompt(symbol=symbol)
     user_prompt = build_user_prompt(market_payload)
 
     for attempt in range(3):
