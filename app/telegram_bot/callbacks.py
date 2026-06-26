@@ -681,6 +681,9 @@ async def menu_risk_trade_100_cb(update: Update, context: ContextTypes.DEFAULT_T
     await menu_risk_trade_callback(update, 1.0)
 
 
+_TF_MAP = {"D1": "D", "H4": "240", "H1": "60", "M15": "15", "M5": "5", "M1": "1"}
+
+
 async def menu_chart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if query is None:
@@ -693,7 +696,6 @@ async def menu_chart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     from app.tv_connector import is_tv_available, get_tv_tools
     from app.telegram_bot.bot import _application
     import asyncio
-    import re
 
     tools = get_tv_tools()
     if tools is None:
@@ -702,7 +704,7 @@ async def menu_chart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     symbols = settings.symbols
-    await _edit_message(update, f"\U0001f4ca Capturing {len(symbols)} pairs...")
+    await _edit_message(update, f"\U0001f4ca Capturing {len(symbols)} pairs (M5 chart + D1/H1 bias)...")
     await query.answer()
 
     for mt5_symbol in symbols:
@@ -710,46 +712,60 @@ async def menu_chart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         try:
             await tools.set_symbol(tv_symbol)
-            await asyncio.sleep(2)
-        except Exception as e:
-            logger.debug(f"Chart: set_symbol {tv_symbol} failed: {e}")
+            await asyncio.sleep(2.0)
+            await tools.set_timeframe("5")
+            await asyncio.sleep(3.0)
+        except Exception:
+            pass
 
         try:
-            screenshot = await tools.capture_screenshot("chart")
-        except Exception as e:
-            logger.debug(f"Chart: screenshot {tv_symbol} failed: {e}")
+            screenshot = await tools.capture_screenshot("full")
+        except Exception:
             continue
 
         if not screenshot:
             continue
 
-        trend_text = ""
+        d1_trend = "N/A"
+        h1_trend = "N/A"
         try:
             from app.mt5_connector.market_data import get_candles
-            import pandas as pd
             df_d1 = get_candles(mt5_symbol, timeframe="D1", count=2)
             if df_d1 is not None and len(df_d1) >= 1:
                 last = df_d1.iloc[-1]
                 close = float(last.get("close", 0))
                 open_p = float(last.get("open", 0))
                 if close > open_p:
-                    trend_text = "D1 BULLISH"
+                    d1_trend = "\U0001f7e2 BULLISH"
                 elif close < open_p:
-                    trend_text = "D1 BEARISH"
+                    d1_trend = "\U0001f534 BEARISH"
                 else:
-                    trend_text = "D1 RANGING"
-            else:
-                trend_text = "No D1 data"
-        except Exception as e:
-            trend_text = "Trend unavailable"
+                    d1_trend = "\u26aa RANGING"
 
-        caption = f"\U0001f4ca <b>{tv_symbol}</b> — {trend_text}"
+            df_h1 = get_candles(mt5_symbol, timeframe="H1", count=2)
+            if df_h1 is not None and len(df_h1) >= 1:
+                last = df_h1.iloc[-1]
+                close = float(last.get("close", 0))
+                open_p = float(last.get("open", 0))
+                if close > open_p:
+                    h1_trend = "\U0001f7e2 BULLISH"
+                elif close < open_p:
+                    h1_trend = "\U0001f534 BEARISH"
+                else:
+                    h1_trend = "\u26aa RANGING"
+        except Exception:
+            pass
+
+        caption = (
+            f"\U0001f4ca <b>{tv_symbol}</b> — M5 Chart\n"
+            f"D1: {d1_trend} | H1: {h1_trend}"
+        )
 
         try:
             from io import BytesIO
 
             img = BytesIO(screenshot)
-            img.name = f"{tv_symbol}.png"
+            img.name = f"{tv_symbol}_m5.png"
             await _application.bot.send_photo(
                 chat_id=query.message.chat_id,
                 photo=img,

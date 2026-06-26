@@ -338,10 +338,9 @@ async def chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text("Unauthorized")
         return
 
-    await update.message.reply_text("\U0001f4ca Capturing chart with D1 bias...")
+    await update.message.reply_text("\U0001f4ca Capturing M5 charts with D1/H1 bias...")
 
     from app.tv_connector import get_tv_tools, is_tv_available
-    from app.telegram_bot.bot import capture_tv_screenshot
 
     if not is_tv_available():
         await update.message.reply_text(
@@ -349,16 +348,25 @@ async def chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         return
 
-    import re
+    import asyncio, re
     tools = get_tv_tools()
 
-    caption_parts = []
-    for mt5_symbol in settings.symbols:
-        tv_symbol = re.sub(r"\.[A-Z0-9]+$", "", mt5_symbol.upper())
-        tv_map = {"US100": "NAS100", "US500": "PEPPERSTONE:US500", "BRENT": "FOREXCOM:USOIL"}
-        tv_symbol = tv_map.get(tv_symbol, tv_symbol)
+    tv_map = {"US100": "NAS100", "US500": "PEPPERSTONE:US500", "BRENT": "FOREXCOM:USOIL"}
 
-        trend_text = "N/A"
+    for mt5_symbol in settings.symbols:
+        symbol_clean = re.sub(r"\.[A-Z0-9]+$", "", mt5_symbol.upper())
+        tv_symbol = tv_map.get(symbol_clean, symbol_clean)
+
+        try:
+            await tools.set_symbol(tv_symbol)
+            await asyncio.sleep(2.0)
+            await tools.set_timeframe("5")
+            await asyncio.sleep(3.0)
+        except Exception:
+            pass
+
+        d1_trend = "N/A"
+        h1_trend = "N/A"
         try:
             from app.mt5_connector.market_data import get_candles
             df_d1 = get_candles(mt5_symbol, timeframe="D1", count=2)
@@ -367,32 +375,45 @@ async def chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 close = float(last.get("close", 0))
                 open_p = float(last.get("open", 0))
                 if close > open_p:
-                    trend_text = "\U0001f7e2 BULLISH"
+                    d1_trend = "\U0001f7e2 BULLISH"
                 elif close < open_p:
-                    trend_text = "\U0001f534 BEARISH"
+                    d1_trend = "\U0001f534 BEARISH"
                 else:
-                    trend_text = "\u26aa RANGING"
+                    d1_trend = "\u26aa RANGING"
+
+            df_h1 = get_candles(mt5_symbol, timeframe="H1", count=2)
+            if df_h1 is not None and len(df_h1) >= 1:
+                last = df_h1.iloc[-1]
+                close = float(last.get("close", 0))
+                open_p = float(last.get("open", 0))
+                if close > open_p:
+                    h1_trend = "\U0001f7e2 BULLISH"
+                elif close < open_p:
+                    h1_trend = "\U0001f534 BEARISH"
+                else:
+                    h1_trend = "\u26aa RANGING"
         except Exception:
             pass
-        caption_parts.append(f"{trend_text} {tv_symbol}")
 
-    bias_summary = "\n".join(caption_parts)
-    caption = f"<b>\U0001f4ca D1 Daily Bias</b>\n\n{bias_summary}"
+        caption = f"\U0001f4ca <b>{tv_symbol}</b> — M5 Chart\nD1: {d1_trend} | H1: {h1_trend}"
 
-    screenshot = await capture_tv_screenshot()
-    if screenshot:
-        from io import BytesIO
+        try:
+            screenshot = await tools.capture_screenshot("full")
+        except Exception:
+            screenshot = None
 
-        img = BytesIO(screenshot)
-        img.name = "chart.png"
-        await update.message.reply_photo(
-            photo=img,
-            caption=caption,
-            parse_mode="HTML",
-        )
-    else:
-        await update.message.reply_text(caption)
-        await update.message.reply_text("\u26a0\ufe0f Chart screenshot unavailable. D1 bias shown above.")
+        if screenshot:
+            from io import BytesIO
+
+            img = BytesIO(screenshot)
+            img.name = f"{tv_symbol}_m5.png"
+            await update.message.reply_photo(
+                photo=img,
+                caption=caption,
+                parse_mode="HTML",
+            )
+        else:
+            await update.message.reply_text(caption)
 
 
 async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
