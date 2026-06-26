@@ -780,7 +780,7 @@ async def menu_clear_draw_callback(update: Update, context: ContextTypes.DEFAULT
         return
 
     import asyncio
-    count = 0
+    success = 0
     failed_list = []
     symbols = settings.symbols
     await _edit_message(update, f"\U0001f5d1 Clearing drawings on {len(symbols)} pairs...")
@@ -791,22 +791,16 @@ async def menu_clear_draw_callback(update: Update, context: ContextTypes.DEFAULT
         try:
             await tools.set_symbol(tv_symbol)
             await asyncio.sleep(4.0)
-
-            ok = False
-            for _ in range(2):
-                ok = await tools.draw_clear()
-                if ok:
-                    break
-                await asyncio.sleep(2.0)
-
+            ok = await tools.draw_clear()
+            await asyncio.sleep(0.5)
             if ok:
-                count += 1
+                success += 1
             else:
                 failed_list.append(tv_symbol)
         except Exception:
             failed_list.append(tv_symbol)
 
-    msg = f"\U0001f5d1 Cleared: {count}/{len(symbols)}"
+    msg = f"\U0001f5d1 Cleared: {success}/{len(symbols)}"
     if failed_list:
         msg += f"\nFailed: {', '.join(failed_list[:5])}"
     await send_message(msg)
