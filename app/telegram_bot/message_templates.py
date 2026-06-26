@@ -549,40 +549,49 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
             _tf_line(h1_section, "H1"),
             _tf_line(m5_section, "M5"),
             "",
-            "<b>-- Trade Plan --</b>",
+            "<b>-- Trade Plan Options --</b>",
         ]
 
-        if entry_low and entry_high:
-            lines.append(f"Entry Area: <code>{_fmt_num(entry_low)}\u2013{_fmt_num(entry_high)}</code>")
-        elif entry_price:
-            lines.append(f"Entry: <code>{_fmt_num(entry_price)}</code>")
+        market_entry = bid if decision_str == "SELL" else ask
+        limit_entry = entry_price
 
-        lines.append(f"SL: <code>{_fmt_num(stop_loss)}</code>")
-        lines.append(f"TP1: <code>{_fmt_num(tp1)}</code>")
-        if tp2:
-            lines.append(f"TP2: <code>{_fmt_num(tp2)}</code>")
-
-        if entry_price and stop_loss and tp1:
+        if market_entry and stop_loss and tp1:
             try:
-                ep = float(entry_price)
+                me = float(market_entry)
                 sl = float(stop_loss)
                 tp = float(tp1)
-                risk_pts = abs(ep - sl)
-                reward_pts = abs(tp - ep)
-                if risk_pts > 0:
-                    lines.append(f"Risk: {risk_pts:.5f} ({risk_pts * 10:.1f} pips)")
-                else:
-                    lines.append("Risk: N/A")
-                if reward_pts > 0:
-                    lines.append(f"Reward: {reward_pts:.5f} ({reward_pts * 10:.1f} pips)")
-                else:
-                    lines.append("Reward: N/A")
-                if rr1:
-                    lines.append(f"Estimated R:R: {rr1:.1f}")
-                elif risk_pts > 0:
-                    lines.append(f"Estimated R:R: {reward_pts / risk_pts:.1f}")
+                risk_m = abs(me - sl)
+                reward_m = abs(tp - me)
+                rr_m = reward_m / risk_m if risk_m > 0 else 0
+                risk_label = "\U0001f534 High risk" if risk_m > 50 else ("\U0001f7e1 Medium risk" if risk_m > 20 else "\U0001f7e2 Low risk")
+                lines.append(f"\U0001f449 <b>Option A: MARKET</b> ({risk_label})")
+                lines.append(f"   Entry: <code>{_fmt_num(market_entry)}</code> (now)")
+                lines.append(f"   SL: <code>{_fmt_num(stop_loss)}</code> | TP: <code>{_fmt_num(tp1)}</code>")
+                lines.append(f"   Risk: {risk_m:.2f} pips | Reward: {reward_m:.2f} pips | R:R {rr_m:.1f}")
+                lines.append(f"   \u26a0 Immediate fill, price may slip")
             except (ValueError, TypeError):
                 pass
+
+        if limit_entry and stop_loss and tp1:
+            try:
+                le = float(limit_entry)
+                sl = float(stop_loss)
+                tp = float(tp1)
+                risk_l = abs(le - sl)
+                reward_l = abs(tp - le)
+                rr_l = reward_l / risk_l if risk_l > 0 else 0
+                prob_label = "\u2705 High probability" if rr_l >= 2.0 else ("\u26a0\ufe0f Medium probability" if rr_l >= 1.2 else "\u274c Low probability")
+                lines.append("")
+                lines.append(f"\U0001f449 <b>Option B: LIMIT</b> ({prob_label})")
+                lines.append(f"   Entry: <code>{_fmt_num(limit_entry)}</code> (AI preferred)")
+                lines.append(f"   SL: <code>{_fmt_num(stop_loss)}</code> | TP: <code>{_fmt_num(tp1)}</code>")
+                lines.append(f"   Risk: {risk_l:.2f} pips | Reward: {reward_l:.2f} pips | R:R {rr_l:.1f}")
+                lines.append(f"   \u2705 Better entry price, may not fill")
+            except (ValueError, TypeError):
+                pass
+
+        if tp2:
+            lines.append(f"   TP2: <code>{_fmt_num(tp2)}</code>")
 
         lines.append("")
         lines.append("<b>-- Execution Notes --</b>")
