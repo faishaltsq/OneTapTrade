@@ -271,13 +271,20 @@ class TradingLoop:
             if not approved:
                 logger.info(f"AUTO_DEMO mode — trade rejected by risk: {risk_result.get('reason')}")
                 try:
-                    from app.telegram_bot.bot import notify_trade_rejected
+                    from app.telegram_bot.bot import send_trade_signal, notify_trade_rejected
+                    await send_trade_signal(ai_decision, risk_result, decision_id or "", signal_result.get("market_payload"))
                     await notify_trade_rejected(risk_result.get("reason", "Risk check failed"), decision=ai_decision)
                 except Exception as e:
                     logger.error(f"Failed to send rejection notice: {e}")
                 return signal_result
 
-            logger.info("AUTO_DEMO mode — executing trade automatically")
+            logger.info("AUTO_DEMO mode — sending signal then executing trade")
+            try:
+                from app.telegram_bot.bot import send_trade_signal
+                await send_trade_signal(ai_decision, risk_result, decision_id or "", signal_result.get("market_payload"))
+            except Exception as e:
+                logger.error(f"Failed to send signal before execution: {e}")
+
             exec_result = await self._do_execute(ai_decision, risk_result, symbol, signal_result)
 
             if exec_result.get("success"):
@@ -303,13 +310,20 @@ class TradingLoop:
             if not approved:
                 logger.info(f"LIVE_AUTO mode — trade rejected by risk: {risk_result.get('reason')}")
                 try:
-                    from app.telegram_bot.bot import notify_trade_rejected
+                    from app.telegram_bot.bot import send_trade_signal, notify_trade_rejected
+                    await send_trade_signal(ai_decision, risk_result, decision_id or "", signal_result.get("market_payload"))
                     await notify_trade_rejected(risk_result.get("reason", "Risk check failed"), decision=ai_decision)
                 except Exception as e:
                     logger.error(f"Failed to send rejection notice: {e}")
                 return signal_result
 
-            logger.info("LIVE_AUTO mode — executing trade on live account")
+            logger.info("LIVE_AUTO mode — sending signal then executing on live account")
+            try:
+                from app.telegram_bot.bot import send_trade_signal
+                await send_trade_signal(ai_decision, risk_result, decision_id or "", signal_result.get("market_payload"))
+            except Exception as e:
+                logger.error(f"Failed to send signal before execution: {e}")
+
             exec_result = await self._do_execute(ai_decision, risk_result, symbol, signal_result)
 
             if exec_result.get("success"):
