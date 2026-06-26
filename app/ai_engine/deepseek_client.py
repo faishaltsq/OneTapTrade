@@ -62,6 +62,35 @@ def _normalize_entry_type(data: dict) -> None:
             entry_plan["entry_type"] = normalized
 
 
+_VALID_REGIMES = {"TRENDING_UP", "TRENDING_DOWN", "RANGING", "BREAKOUT", "REVERSAL", "HIGH_VOLATILITY", "LOW_VOLATILITY", "UNCLEAR"}
+
+
+def _sanitize_market_regime(data: dict) -> None:
+    raw = data.get("market_regime")
+    if raw is None:
+        return
+    raw_str = str(raw).upper().strip()
+    if raw_str in _VALID_REGIMES:
+        return
+    if "TREND" in raw_str and "UP" in raw_str:
+        data["market_regime"] = "TRENDING_UP"
+    elif "TREND" in raw_str and "DOWN" in raw_str:
+        data["market_regime"] = "TRENDING_DOWN"
+    elif "RANG" in raw_str or "SIDEWAY" in raw_str:
+        data["market_regime"] = "RANGING"
+    elif "BREAK" in raw_str:
+        data["market_regime"] = "BREAKOUT"
+    elif "REVERS" in raw_str:
+        data["market_regime"] = "REVERSAL"
+    elif "HIGH" in raw_str and "VOL" in raw_str:
+        data["market_regime"] = "HIGH_VOLATILITY"
+    elif "LOW" in raw_str and "VOL" in raw_str:
+        data["market_regime"] = "LOW_VOLATILITY"
+    else:
+        data["market_regime"] = "UNCLEAR"
+    logger.info(f"Sanitized market_regime: {raw_str} -> {data['market_regime']}")
+
+
 def get_ai_decision(market_payload: dict) -> AIDecisionResponse:
     if not settings.deepseek_api_key:
         logger.error("DeepSeek API key not configured")
@@ -130,6 +159,7 @@ def get_ai_decision(market_payload: dict) -> AIDecisionResponse:
         return _default_hold()
 
     _normalize_entry_type(data)
+    _sanitize_market_regime(data)
 
     if "confidence" in data and data["confidence"] is not None:
         try:

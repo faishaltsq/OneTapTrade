@@ -705,6 +705,18 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
             _tf_line(m5_section, "M5"),
         ]
 
+        if entry_type and entry_type != "NONE" and entry_price:
+            lines.append("")
+            lines.append("<b>-- Potential Setup (HOLD) --</b>")
+            lines.append(f"Entry Type: {_escape_html(str(entry_type))}")
+            lines.append(f"Potential Entry: <code>{_fmt_num(entry_price)}</code>")
+            if stop_loss:
+                lines.append(f"SL: <code>{_fmt_num(stop_loss)}</code>")
+            if tp1:
+                lines.append(f"TP1: <code>{_fmt_num(tp1)}</code>")
+            if rr1:
+                lines.append(f"R:R: {_fmt_num(rr1)}")
+
         limit_recs = _build_limit_recommendation_text(payload)
         if limit_recs:
             lines.append("")
@@ -713,7 +725,7 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
 
         if reason:
             lines.append("")
-            lines.append(f"\U0001f4ac <i>{_escape_html(reason[:300])}</i>")
+            lines.append(f"\U0001f4ac <i>{_escape_html(reason[:400])}</i>")
 
     if smc_probability_lines and decision_str in ("BUY", "SELL"):
         lines.append("")

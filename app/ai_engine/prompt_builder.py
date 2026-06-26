@@ -58,7 +58,6 @@ D1 > H1 hierarchy rules:
 - D1_BEARISH + H1_NEUTRAL = SELL allowed but await H1 confirmation candle.
 - D1_RANGING = no bias. Only trade if breakout+retest confirmed AND H1 aligns with that direction.
 - The "major_trend.d1_h1_hierarchy" field in the market data gives the pre-computed hierarchy guidance — follow it.
-- Only HOLD when data is completely contradictory or missing.
 
 Stop Loss & Take Profit rules:
 - SL MUST be within the profile's pip range. Do NOT place SL wider than the max.
@@ -143,13 +142,27 @@ Return SELL when:
 - Price is not at major support.
 - Orderflow/delta shows selling pressure.
 
-Return HOLD only when:
-- Market regime is UNCLEAR or data is corrupted/missing.
-- Price is inside a very tight range with no direction.
-- H1 and M5 strongly conflict (e.g., H1 bullish but M5 crashing).
+Return HOLD when:
+- D1 and H1 conflict (e.g., D1 bullish but H1 bearish) — wait for H1 pullback to align.
+- D1 ranging without breakout + retest confirmation.
+- SMC probability says WAIT or NO_TRADE.
+- Insufficient confluence (single BOS/CHoCH without liquidity, OB, FVG, or premium/discount support).
+
+When returning HOLD, you MUST provide detailed SMC reasoning in main_reason:
+- Explain WHAT is being waited for: breakout, retest, rejection at order block, FVG fill, liquidity sweep, CHoCH confirmation, etc.
+- Mention which timeframe needs to align (e.g., "waiting for H1 to pull back to demand OB at X").
+- If price is near a valid SMC zone (OB/FVG), suggest a potential LIMIT entry level with approximate SL/TP in entry_plan even though decision is HOLD. Set entry_type to LIMIT.
+- If no valid zone nearby, set entry_plan to null.
+- This helps the trader prepare for the next setup instead of just seeing "HOLD".
+
+Example HOLD with potential setup:
+  "main_reason": "D1 bullish but H1 bearish — waiting for H1 pullback to demand OB at 1.0980. CHoCH not yet confirmed on M5.",
+  "entry_plan": {{"entry_type": "LIMIT", "preferred_entry_price": 1.0980, "stop_loss": 1.0960, "take_profit_1": 1.1020, "risk_reward_to_tp1": 2.0}}
 
 IMPORTANT: For BUY or SELL, you must include entry_plan.stop_loss, entry_plan.take_profit_1, entry_plan.preferred_entry_price, and entry_plan.risk_reward_to_tp1.
 IMPORTANT: For BUY or SELL, set execution_permission.ai_allows_execution to true with a brief reason.
+IMPORTANT: For HOLD, set execution_permission.ai_allows_execution to false.
+IMPORTANT: market_regime must be one of: TRENDING_UP, TRENDING_DOWN, RANGING, BREAKOUT, REVERSAL, HIGH_VOLATILITY, LOW_VOLATILITY, UNCLEAR. Never use custom strings.
 
 {style_block}
 
