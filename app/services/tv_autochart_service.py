@@ -90,7 +90,7 @@ async def draw_and_capture_multi_tf(
             pass
 
         try:
-            screenshot = await tools.capture_screenshot("full")
+            screenshot = await tools.capture_screenshot("chart")
             if screenshot:
                 results.append({
                     "timeframe": tf,
