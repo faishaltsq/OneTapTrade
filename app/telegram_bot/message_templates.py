@@ -485,69 +485,220 @@ def _first_matching_reason(score: dict, factor: str) -> str | None:
     return None
 
 
-def _format_smc_probability_block(symbol: str, payload: dict, risk_result: dict) -> list[str]:
-    score = (payload or {}).get("smc_probability") or {}
+def _smc_event_label(smc: dict) -> str:
+    choch = smc.get("choch", {}) if isinstance(smc, dict) else {}
+    has_choch = False
+    choch_dir = ""
+    for tf_data in (choch.values() if isinstance(choch, dict) else []):
+        if isinstance(tf_data, dict):
+            if tf_data.get("bullish_choch"):
+                has_choch = True
+                choch_dir = "Bullish "
+            if tf_data.get("bearish_choch"):
+                has_choch = True
+                choch_dir = "Bearish "
+    if has_choch:
+        return f"{choch_dir}CHoCH"
+    liq = smc.get("liquidity_levels") or []
+    if liq:
+        return "Liquidity Sweep"
+    return "None"
+
+
+def _main_zone_info(payload: dict, decision_str: str) -> tuple[str, str]:
+    smc = payload.get("smc", {}) or {}
+    obs = smc.get("order_blocks", {}) or {}
+    fvg = smc.get("fvg_zones") or []
+    mid = (payload.get("current_price") or {}).get("mid", 0)
+    if decision_str == "BUY":
+        demand = obs.get("demand") or []
+        if demand:
+            ob = demand[-1] if isinstance(demand[-1], dict) else {}
+            return "Demand OB", f"{_fmt_num(ob.get('low'))} \u2013 {_fmt_num(ob.get('high'))}"
+    if decision_str == "SELL":
+        supply = obs.get("supply") or []
+        if supply:
+            ob = supply[-1] if isinstance(supply[-1], dict) else {}
+            return "Supply OB", f"{_fmt_num(ob.get('low'))} \u2013 {_fmt_num(ob.get('high'))}"
+    if fvg:
+        z = fvg[-1] if isinstance(fvg[-1], dict) else {}
+        return f"FVG ({z.get('direction', 'N/A')})", f"{_fmt_num(z.get('bottom'))} \u2013 {_fmt_num(z.get('top'))}"
+    return "N/A", "N/A"
+
+
+def _bias_label(score: dict, d1_short: str, h1_short: str) -> str:
+    raw = str(score.get("bias") or "").lower()
+    if raw == "bullish":
+        return "Bullish"
+    if raw == "bearish":
+        return "Bearish"
+    if "BULL" in d1_short.upper() and "BULL" in h1_short.upper():
+        return "Bullish"
+    if "BEAR" in d1_short.upper() and "BEAR" in h1_short.upper():
+        return "Bearish"
+    if "BULL" in d1_short.upper() and "BEAR" in h1_short.upper():
+        return "Neutral to Bullish"
+    if "BEAR" in d1_short.upper() and "BULL" in h1_short.upper():
+        return "Neutral to Bearish"
+    return "Neutral"
+
+
+def _decision_emoji_v2(decision: str) -> str:
+    d = decision.upper()
+    if d in ("BUY", "BUY_SETUP"):
+        return "\U0001f7e2"
+    if d in ("SELL", "SELL_SETUP"):
+        return "\U0001f534"
+    return "\u26aa"
+
+
+def _format_smc_signal(symbol: str, decision, payload: dict, risk_result: dict) -> str:
+    score = payload.get("smc_probability") or {}
     if not score:
-        return []
+        return ""
+    decision_str = _enum_value(getattr(decision, "decision", "HOLD"))
+    confidence = getattr(decision, "confidence", 0.0) or 0.0
+    reason = getattr(decision, "main_reason", "") or getattr(decision, "final_comment", "") or ""
+
+    major_trend = payload.get("major_trend", {})
+    d1_bias = major_trend.get("bias", "D1_UNCLEAR")
+    h1_bias = major_trend.get("h1_bias", "NONE")
+    d1_short = "Bullish" if "BULL" in d1_bias.upper() else ("Bearish" if "BEAR" in d1_bias.upper() else "Unclear")
+    h1_short = h1_bias.title() if h1_bias and h1_bias != "NONE" else "Unclear"
+
     model = score.get("timeframe_model") or {}
+    exec_tfs = "/".join(model.get("execution_timeframes") or []) or "N/A"
+    final_score = int(score.get("final_score") or 0)
+    quality = str(score.get("setup_quality") or "low").title()
+    semantic = score.get("pre_ai_decision") or "WAIT"
+    bias_label = _bias_label(score, d1_short, h1_short)
+
+    smc = payload.get("smc", {}) or {}
+    smc_event = _smc_event_label(smc)
+    zone_name, zone_price = _main_zone_info(payload, decision_str)
+    pd_reason = _first_matching_reason(score, "premium_discount")
+    pd_status = "confirmed" if pd_reason and "discount" in pd_reason.lower() or pd_reason and "premium" in pd_reason.lower() else "manual confirmation required"
+
+    ep = getattr(decision, "entry_plan", None)
+    entry_price = getattr(ep, "preferred_entry_price", None) if ep else None
+    stop_loss = getattr(ep, "stop_loss", None) if ep else None
+    tp1 = getattr(ep, "take_profit_1", None) if ep else None
+    rr1 = getattr(ep, "risk_reward_to_tp1", None) if ep else None
+    entry_type = _enum_value(getattr(ep, "entry_type", None)) if ep else None
+
+    entry_ctx = payload.get("entry_plan_context") or {}
+    rr_ctx = entry_ctx.get("risk_reward_to_tp1")
+
+    price = payload.get("current_price") or {}
+    bid = price.get("bid")
+    ask = price.get("ask")
+    spread_pts = price.get("spread_points", 0)
+
+    d1_section = payload.get("higher_timeframe", {})
+    h1_section = payload.get("primary_timeframe", {})
+    m5_section = payload.get("entry_timeframe", {})
+
+    def _tf_ctx(section, label):
+        if not section:
+            return f"{label}: N/A"
+        ms = section.get("market_structure", {}) if isinstance(section, dict) else {}
+        ind = section.get("indicators", {}) if isinstance(section, dict) else {}
+        trend = str(ms.get("trend") or ms.get("bias") or "Unclear").title()
+        rsi = ind.get("rsi_14")
+        rsi_s = "N/A"
+        if rsi is not None:
+            try:
+                rsi_s = f"{float(rsi):.0f}"
+            except (ValueError, TypeError):
+                pass
+        ema = _ema_bias(ind)
+        return f"{label}: {trend} | RSI {rsi_s} | EMA {ema}"
+
     confluence = score.get("main_confluence") or []
     weaknesses = score.get("weaknesses") or []
-    risk_notes = score.get("risk_notes") or []
-    quality = str(score.get("setup_quality") or "low").title()
-    decision = score.get("pre_ai_decision") or "WAIT"
-    entry_note = score.get("entry_sl_tp_note") or "manual confirmation required"
-    invalidation = score.get("invalidation") or "manual confirmation required"
-    price = (payload or {}).get("current_price") or {}
-    execution_tfs = "/".join(model.get("execution_timeframes") or []) or "N/A"
 
-    emoji = "\U0001f7e2" if decision == "BUY_SETUP" else "\U0001f534" if decision == "SELL_SETUP" else "\u26aa"
+    display_decision = decision_str
+    if decision_str == "HOLD":
+        display_decision = semantic if semantic in ("WAIT", "NO_TRADE") else "HOLD"
+
+    emoji = _decision_emoji_v2(display_decision)
+    risk_status = "Blocked" if score.get("forced_no_trade") else ("Waiting" if display_decision in ("WAIT", "HOLD") else "Valid")
 
     lines = [
-        f"{emoji} <b>{_escape_html(symbol)} \u2014 SMC ANALYSIS</b>",
+        f"{emoji} <b>{_escape_html(symbol)} \u2014 {display_decision}</b>",
         "",
-        "<b>Bias:</b>",
-        f"Direction: {_escape_html(str(score.get('bias') or 'neutral'))}",
-        f"Execution TF: {_escape_html(execution_tfs)}",
+        f"<b>Bias:</b> {_escape_html(bias_label)}",
+        f"<b>Probability:</b> {final_score}%",
+        f"<b>Quality:</b> {_escape_html(quality)}",
+        f"<b>Execution TF:</b> {_escape_html(exec_tfs)}",
         "",
-        "<b>SMC Event:</b>",
-        f"Decision: {_escape_html(decision)}",
-        f"Premium/Discount: {_escape_html(_first_matching_reason(score, 'premium_discount') or 'manual confirmation required')}",
+        "<b>-- TF Context --</b>",
+        _tf_ctx(d1_section, "D1"),
+        _tf_ctx(h1_section, "H1"),
+        _tf_ctx(m5_section, "M5"),
         "",
-        "<b>Confluence:</b>",
+        "<b>-- Setup Context --</b>",
+        f"SMC Event: {_escape_html(smc_event)}",
+        f"Main Zone: {_escape_html(zone_name)}",
+        f"Zone Price: <code>{_escape_html(zone_price)}</code>",
+        f"Premium/Discount: {_escape_html(pd_status)}",
+        "",
+        "<b>-- Decision Reason --</b>",
     ]
-    lines.extend([f"\u2705 {_escape_html(item)}" for item in confluence[:4]])
-    lines.extend([f"\u26a0\ufe0f {_escape_html(item)}" for item in weaknesses[:4]])
+
+    if reason:
+        lines.append(f"<i>{_escape_html(reason[:300])}</i>")
+    else:
+        lines.append(f"<i>Score {final_score}% \u2014 {display_decision}</i>")
+
     lines.extend([
         "",
-        "<b>Probability:</b>",
-        f"Score: {int(score.get('final_score') or 0)}%",
-        f"Quality: {_escape_html(quality)}",
-        "",
-        "<b>Decision:</b>",
-        _escape_html(decision),
-        "",
-        "<b>Risk:</b>",
-        f"Spread: {_fmt_num(price.get('spread_points'))} pts",
-        f"RR: {_escape_html(str(((payload or {}).get('entry_plan_context') or {}).get('risk_reward_to_tp1', 'manual confirmation required')))}",
-        "",
-        "<b>Entry/SL/TP:</b>",
-        _escape_html(entry_note).capitalize(),
-        "",
-        "<b>Invalidation:</b>",
-        _escape_html(invalidation),
+        "<b>-- Watch / Trade Plan --</b>",
+        f"Entry: <code>{_fmt_num(entry_price) if entry_price else 'No entry yet'}</code>",
+        f"SL: <code>{_fmt_num(stop_loss) if stop_loss else 'Pending'}</code>",
+        f"TP: <code>{_fmt_num(tp1) if tp1 else 'Pending'}</code>",
+        f"RR: {_fmt_num(rr1) if rr1 else 'Pending'}",
     ])
-    if risk_notes:
-        lines.append("")
-        lines.append("<b>Notes:</b> " + _escape_html("; ".join(str(n) for n in risk_notes[:3])))
-    return lines
+
+    if display_decision in ("WAIT", "HOLD"):
+        trigger_parts = []
+        if weaknesses:
+            trigger_parts.append(weaknesses[0])
+        if confluence:
+            trigger_parts.append(f"Waiting: {confluence[0]}")
+        lines.append(f"Trigger: {_escape_html('; '.join(trigger_parts[:2]) or 'confirmation needed')}")
+    else:
+        lines.append(f"Trigger: {_escape_html(str(entry_type or 'MARKET') + ' entry')}")
+
+    lines.extend([
+        "",
+        "<b>-- Risk Check --</b>",
+        f"Spread: {spread_pts} pts | Max: {settings.max_spread_points} pts",
+        f"RR: {_fmt_num(rr_ctx) if rr_ctx else 'Pending'} | Min: {settings.effective_min_risk_reward}",
+        f"Risk Status: {_escape_html(risk_status)}",
+        "",
+        f"<b>-- Invalidation --</b>",
+        f"<i>{_escape_html(score.get('invalidation') or 'manual confirmation required')}</i>",
+        "",
+        f"\U0001f4ca Bid: {_fmt_num(bid)} | Ask: {_fmt_num(ask)} | Spread: {spread_pts} pts",
+        "",
+        f"<b>Final Decision: {_escape_html(display_decision)}</b>",
+    ])
+
+    if not risk_result.get("approved") and decision_str in ("BUY", "SELL"):
+        lines.append(f"\u274c Blocked: {_escape_html(str(risk_result.get('reason', '')))}")
+
+    return "\n".join(lines)
 
 
 def format_market_trend_alert(decision, symbol: str, market_payload: dict | None = None, risk_result: dict | None = None) -> str:
     payload = market_payload or {}
     risk_result = risk_result or {}
-    smc_probability_lines = _format_smc_probability_block(symbol, payload, risk_result)
-    smc_score = (payload.get("smc_probability") or {})
-    smc_semantic = str(smc_score.get("pre_ai_decision") or "").upper()
+
+    smc_signal = _format_smc_signal(symbol, decision, payload, risk_result)
+    if smc_signal:
+        return smc_signal
+
     decision_str = _enum_value(getattr(decision, "decision", "HOLD"))
     confidence = getattr(decision, "confidence", 0.0) or 0.0
     reason = getattr(decision, "main_reason", "") or getattr(decision, "final_comment", "") or ""
@@ -724,10 +875,6 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
         if reason:
             lines.append("")
             lines.append(f"\U0001f4ac <i>{_escape_html(reason[:400])}</i>")
-
-    if smc_probability_lines:
-        lines.append("")
-        lines.extend(smc_probability_lines[1:])
 
     lines.append("")
     lines.append(f"\U0001f4ca Bid: {_fmt_num(bid)} | Ask: {_fmt_num(ask)} | Spread: {spread_pts} pts")

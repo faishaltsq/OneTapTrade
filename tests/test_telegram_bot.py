@@ -934,10 +934,11 @@ def test_signal_message_renders_smc_probability_block():
 
     assert "EURUSD.m" in message
     assert "Probability" in message
-    assert "Score: 72%" in message
+    assert "72%" in message
     assert "WAIT" in message
-    assert "Manual confirmation required" in message
-    assert "Multi-Timeframe Analysis" in message
+    assert "Manual confirmation required" in message or "manual confirmation required" in message
+    assert "TF Context" in message
+    assert "Final Decision" in message
 
 
 @pytest.mark.asyncio
