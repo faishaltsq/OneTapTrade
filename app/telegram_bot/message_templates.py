@@ -477,7 +477,6 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
     confidence = getattr(decision, "confidence", 0.0) or 0.0
     reason = getattr(decision, "main_reason", "") or getattr(decision, "final_comment", "") or ""
     d_emoji = _decision_emoji(decision_str)
-    c_emoji = _confidence_emoji(confidence)
 
     major_trend = payload.get("major_trend", {})
     d1_bias = major_trend.get("bias", "D1_UNCLEAR")
@@ -485,6 +484,9 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
     hierarchy = major_trend.get("d1_h1_hierarchy", "")
     h1_alignment = major_trend.get("h1_alignment", "NONE")
     align_emoji = "\u2705" if h1_alignment == "ALIGNED" else ("\u26a0\ufe0f" if h1_alignment == "CONTRARY" else "\u2795")
+
+    d1_short = "BULLISH" if "BULL" in d1_bias.upper() else ("BEARISH" if "BEAR" in d1_bias.upper() else "RANGING")
+    h1_short = h1_bias.upper() if h1_bias and h1_bias != "NONE" else "UNCLEAR"
 
     entry_plan = getattr(decision, "entry_plan", None)
     ep = entry_plan
@@ -494,66 +496,126 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
     tp1 = getattr(ep, "take_profit_1", None) if ep else None
     tp2 = getattr(ep, "take_profit_2", None) if ep else None
     rr1 = getattr(ep, "risk_reward_to_tp1", None) if ep else None
+    entry_low = getattr(ep, "entry_area_low", None) if ep else None
+    entry_high = getattr(ep, "entry_area_high", None) if ep else None
 
     current_price = payload.get("current_price", {})
     bid = current_price.get("bid")
     ask = current_price.get("ask")
-
-    lines = [
-        f"{d_emoji} <b>{_escape_html(symbol)}</b> — {_escape_html(d1_bias)} {align_emoji} H1 {_escape_html(h1_bias)}",
-        f"<i>{_escape_html(hierarchy)}</i>",
-        "",
-        "<b>-- Multi-TF Breakdown --</b>",
-    ]
+    spread_pts = current_price.get("spread_points", 0)
 
     d1_section = payload.get("higher_timeframe", {})
     h1_section = payload.get("primary_timeframe", {})
     m5_section = payload.get("entry_timeframe", {})
 
-    def _tf_summary(section, label):
+    def _tf_line(section, label):
         if not section:
             return f"{label}: N/A"
         ms = section.get("market_structure", {}) if isinstance(section, dict) else {}
         ind = section.get("indicators", {}) if isinstance(section, dict) else {}
-        trend = ms.get("trend") or ms.get("bias") or "UNCLEAR"
+        trend = str(ms.get("trend") or ms.get("bias") or "UNCLEAR").title()
         rsi = ind.get("rsi_14")
         rsi_s = ""
         if rsi:
             try:
-                r = float(rsi)
-                rsi_s = f" | RSI {r:.0f}"
+                rsi_s = f" | RSI {float(rsi):.0f}"
             except (ValueError, TypeError):
                 pass
         ema = _ema_bias(ind)
         return f"{label}: {trend}{rsi_s} | EMA {ema}"
 
-    lines.append(_tf_summary(d1_section, "D1"))
-    lines.append(_tf_summary(h1_section, "H1"))
-    lines.append(_tf_summary(m5_section, "M5"))
-    lines.append("")
+    m5_trend = ""
+    try:
+        m5_ms = m5_section.get("market_structure", {}) if isinstance(m5_section, dict) else {}
+        m5_trend = str(m5_ms.get("trend") or m5_ms.get("bias") or "UNCLEAR").lower()
+    except Exception:
+        m5_trend = "unclear"
 
     if decision_str in ("BUY", "SELL"):
-        lines.append(f"<b>Signal:</b> {_escape_html(decision_str)} {_escape_html(entry_type or '')} | {c_emoji} <b>{confidence:.0%}</b>")
-        lines.append("")
-        lines.append("<b>-- Trade Plan --</b>")
-        if entry_price:
+        setup_label = f"{decision_str} SETUP"
+        entry_label = f"{decision_str} {entry_type or 'MARKET'}"
+        aggressive = "Aggressive Entry" if m5_trend == "ranging" else "Confirmed Entry"
+
+        lines = [
+            f"{d_emoji} <b>{_escape_html(symbol)} \u2014 {setup_label}</b>",
+            "",
+            f"<b>Bias:</b> D1 {d1_short} {align_emoji} | H1 {h1_short} {align_emoji}",
+            f"<b>Confluence:</b> {_escape_html(hierarchy)}",
+            f"<b>Entry Type:</b> {_escape_html(entry_label)} / {aggressive}",
+            f"<b>Confidence:</b> {confidence:.0%}",
+            "",
+            "<b>-- Multi-Timeframe Analysis --</b>",
+            _tf_line(d1_section, "D1"),
+            _tf_line(h1_section, "H1"),
+            _tf_line(m5_section, "M5"),
+            "",
+            "<b>-- Trade Plan --</b>",
+        ]
+
+        if entry_low and entry_high:
+            lines.append(f"Entry Area: <code>{_fmt_num(entry_low)}\u2013{_fmt_num(entry_high)}</code>")
+        elif entry_price:
             lines.append(f"Entry: <code>{_fmt_num(entry_price)}</code>")
+
         lines.append(f"SL: <code>{_fmt_num(stop_loss)}</code>")
-        lines.append(f"TP1: <code>{_fmt_num(tp1)}</code>" + (f"  R:R {rr1:.1f}" if rr1 else ""))
+        lines.append(f"TP1: <code>{_fmt_num(tp1)}</code>")
         if tp2:
             lines.append(f"TP2: <code>{_fmt_num(tp2)}</code>")
-    else:
-        lines.append(f"<b>Signal: {_escape_html(decision_str)}</b> | {c_emoji} {confidence:.0%}")
 
-    if reason:
+        if bid and ask and stop_loss and tp1:
+            try:
+                mid = (float(bid) + float(ask)) / 2.0
+                risk_pts = abs(mid - float(stop_loss))
+                reward_pts = abs(float(tp1) - mid)
+                lines.append(f"Risk: \u00b1{risk_pts:.1f} points")
+                lines.append(f"Reward: \u00b1{reward_pts:.1f} points")
+                if rr1:
+                    lines.append(f"Estimated R:R: {rr1:.1f}")
+            except (ValueError, TypeError):
+                pass
+
         lines.append("")
-        lines.append(f"\U0001f4ac <i>{_escape_html(reason)}</i>")
+        lines.append("<b>-- Execution Notes --</b>")
+        if reason:
+            lines.append(f"<i>{_escape_html(reason[:300])}</i>")
+        if m5_trend == "ranging":
+            lines.append(f"M5 is ranging \u2014 entry is aggressive. Safer: wait for M5 breakout or pullback rejection.")
+        else:
+            lines.append(f"M5 confirms direction \u2014 entry aligned with short-term momentum.")
 
-    price_line = f"\U0001f4ca Bid {_fmt_num(bid)} / Ask {_fmt_num(ask)}"
-    m5_ind = _indicators(payload, "entry_timeframe")
-    rsi = m5_ind.get("rsi_14")
-    rsi_str = _fmt_alert_num(rsi) if rsi else "N/A"
-    lines.append(f"{price_line} | RSI {rsi_str}")
+        lines.append("")
+        lines.append("<b>-- Management --</b>")
+        lines.append("Move SL to BE after price reaches +1R.")
+        lines.append("Partial close can be taken at TP1.")
+        if stop_loss:
+            lines.append(f"Invalid if price breaks and closes below/above {_fmt_num(stop_loss)}.")
+
+    else:
+        lines = [
+            f"{d_emoji} <b>{_escape_html(symbol)} \u2014 {decision_str}</b>",
+            "",
+            f"<b>Bias:</b> D1 {d1_short} {align_emoji} | H1 {h1_short} {align_emoji}",
+            f"<b>Confluence:</b> {_escape_html(hierarchy)}",
+            f"<b>Confidence:</b> {confidence:.0%}",
+            "",
+            "<b>-- Multi-Timeframe Analysis --</b>",
+            _tf_line(d1_section, "D1"),
+            _tf_line(h1_section, "H1"),
+            _tf_line(m5_section, "M5"),
+        ]
+
+        limit_recs = _build_limit_recommendation_text(payload)
+        if limit_recs:
+            lines.append("")
+            lines.append("<b>-- Limit Rekomendasi --</b>")
+            lines.append(limit_recs)
+
+        if reason:
+            lines.append("")
+            lines.append(f"\U0001f4ac <i>{_escape_html(reason[:300])}</i>")
+
+    lines.append("")
+    lines.append(f"\U0001f4ca Bid: {_fmt_num(bid)} | Ask: {_fmt_num(ask)} | Spread: {spread_pts} pts")
 
     approved = risk_result.get("approved")
     if not approved and decision_str in ("BUY", "SELL"):
@@ -561,6 +623,45 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
         lines.append(f"\u274c Blocked: {_escape_html(str(risk_reason))}")
 
     return "\n".join(lines)
+
+
+def _build_limit_recommendation_text(payload: dict) -> str:
+    smc = payload.get("smc", {})
+    major_trend = payload.get("major_trend", {})
+    price = payload.get("current_price", {})
+    mid = price.get("mid", 0)
+
+    lines = []
+    allowed = major_trend.get("allowed_directions", [])
+    order_blocks = smc.get("order_blocks", {})
+    demand = order_blocks.get("demand", []) or []
+    supply = order_blocks.get("supply", []) or []
+
+    if "BUY" in allowed and demand:
+        nearest = demand[-1] if isinstance(demand[-1], dict) else {}
+        low = nearest.get("low")
+        high = nearest.get("high")
+        if low and high and mid > 0:
+            lines.append(f"\u2191 BUY LIMIT zone: {low} \u2013 {high}")
+            if float(low) < mid:
+                lines.append("   Price above zone \u2014 wait for retrace")
+            else:
+                lines.append("   Price inside zone \u2014 wait for confirmation")
+            lines.append(f"   SL: below {low} | TP: next supply block")
+
+    if "SELL" in allowed and supply:
+        nearest = supply[-1] if isinstance(supply[-1], dict) else {}
+        high_val = nearest.get("high")
+        low_val = nearest.get("low")
+        if high_val and low_val and mid > 0:
+            lines.append(f"\u2193 SELL LIMIT zone: {low_val} \u2013 {high_val}")
+            if float(high_val) > mid:
+                lines.append("   Price below zone \u2014 wait for retrace")
+            else:
+                lines.append("   Price inside zone \u2014 wait for confirmation")
+            lines.append(f"   SL: above {high_val} | TP: next demand block")
+
+    return "\n".join(lines) if lines else ""
 
 
 def format_signal_message(decision, risk_result: dict, symbol: str, market_payload: dict | None = None) -> str:
