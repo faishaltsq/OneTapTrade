@@ -301,10 +301,15 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
         smc_probability = (market_payload or {}).get("smc_probability") or {}
         semantic_decision = str(smc_probability.get("pre_ai_decision") or "").upper()
         final_score = smc_probability.get("final_score")
-        if semantic_decision == "NO_TRADE" and not settings.send_no_trade_alert:
+        decision_str_raw = getattr(decision, "decision", None)
+        if hasattr(decision_str_raw, "value"):
+            decision_str_raw = decision_str_raw.value
+        is_trade_decision = decision_str_raw in ("BUY", "SELL")
+
+        if semantic_decision == "NO_TRADE" and not settings.send_no_trade_alert and is_trade_decision:
             logger.info(f"Telegram signal suppressed for {symbol}: NO_TRADE and SEND_NO_TRADE_ALERT=false")
             return False
-        if final_score is not None and float(final_score) < settings.min_signal_probability and semantic_decision != "NO_TRADE":
+        if is_trade_decision and final_score is not None and float(final_score) < settings.min_signal_probability and semantic_decision != "NO_TRADE":
             logger.info(
                 f"Telegram signal suppressed for {symbol}: probability {float(final_score):.0f} "
                 f"below {settings.min_signal_probability}"
@@ -312,9 +317,7 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
             return False
         signal_text = format_signal_message(decision, risk_result, symbol, market_payload=market_payload)
         chat_id = settings.telegram_allowed_chat_id
-        decision_str = getattr(decision, "decision", None)
-        if hasattr(decision_str, "value"):
-            decision_str = decision_str.value
+        decision_str = decision_str_raw
 
         reply_markup = None
         if settings.is_semi_auto and risk_result.get("approved"):

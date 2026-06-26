@@ -947,12 +947,12 @@ async def test_send_trade_signal_suppresses_no_trade_alert(monkeypatch):
     from app.telegram_bot import bot as bot_module
 
     decision = AIDecisionResponse(
-        decision=Decision.HOLD,
-        confidence=0.2,
-        confidence_label=ConfidenceLabel.LOW,
-        market_regime=MarketRegime.UNCLEAR,
-        higher_timeframe_bias=TimeframeBias.UNCLEAR,
-        entry_timeframe_bias=TimeframeBias.UNCLEAR,
+        decision=Decision.BUY,
+        confidence=0.8,
+        confidence_label=ConfidenceLabel.HIGH,
+        market_regime=MarketRegime.TRENDING_UP,
+        higher_timeframe_bias=TimeframeBias.BULLISH,
+        entry_timeframe_bias=TimeframeBias.BULLISH,
     )
     original_token = settings.telegram_bot_token
     original_chat_id = settings.telegram_allowed_chat_id
