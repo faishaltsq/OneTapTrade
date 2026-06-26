@@ -779,13 +779,14 @@ async def menu_clear_draw_callback(update: Update, context: ContextTypes.DEFAULT
         await query.answer()
         return
 
-    await _edit_message(update, "\U0001f5d1 Clearing drawings on all pairs...")
-    await query.answer()
-
     import asyncio
     count = 0
-    failed = 0
-    for mt5_symbol in settings.symbols:
+    failed_list = []
+    symbols = settings.symbols
+    await _edit_message(update, f"\U0001f5d1 Clearing drawings on {len(symbols)} pairs...")
+    await query.answer()
+
+    for mt5_symbol in symbols:
         tv_symbol = _map_tv_symbol(mt5_symbol)
         try:
             await tools.set_symbol(tv_symbol)
@@ -801,11 +802,14 @@ async def menu_clear_draw_callback(update: Update, context: ContextTypes.DEFAULT
             if ok:
                 count += 1
             else:
-                failed += 1
+                failed_list.append(tv_symbol)
         except Exception:
-            failed += 1
+            failed_list.append(tv_symbol)
 
-    await send_message(f"\U0001f5d1 Cleared: {count} pairs | Failed: {failed} pairs")
+    msg = f"\U0001f5d1 Cleared: {count}/{len(symbols)}"
+    if failed_list:
+        msg += f"\nFailed: {', '.join(failed_list[:5])}"
+    await send_message(msg)
     await send_main_menu()
 
 
