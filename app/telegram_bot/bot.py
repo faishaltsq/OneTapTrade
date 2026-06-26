@@ -394,21 +394,47 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
         return False
 
 
-async def notify_trade_executed(trade_result: dict) -> bool:
+async def notify_trade_executed(trade_result: dict, ai_decision=None) -> bool:
     ticket = trade_result.get("ticket") or trade_result.get("order")
     symbol = trade_result.get("symbol", settings.default_symbol)
     volume = trade_result.get("volume", "?")
     price = trade_result.get("price", "?")
 
-    text = (
-        "<b>\u2705 Trade Executed</b>\n\n"
-        f"<b>Ticket:</b> <code>{ticket}</code>\n"
-        f"<b>Symbol:</b> <code>{symbol}</code>\n"
-        f"<b>Volume:</b> {volume}\n"
-        f"<b>Price:</b> {price}"
-    )
+    lines = [
+        "<b>\u2705 Trade Executed</b>",
+        f"<b>Ticket:</b> <code>{ticket}</code>",
+        f"<b>Symbol:</b> <code>{symbol}</code>",
+        f"<b>Volume:</b> {volume}",
+        f"<b>Price:</b> {price}",
+    ]
 
-    return await send_message(text)
+    if ai_decision is not None:
+        try:
+            d = getattr(ai_decision, "decision", None)
+            d_val = d.value if hasattr(d, "value") else str(d or "?")
+            conf = getattr(ai_decision, "confidence", 0.0) or 0.0
+            ep = getattr(ai_decision, "entry_plan", None)
+            entry_type = getattr(ep, "entry_type", None) if ep else None
+            et_val = entry_type.value if entry_type and hasattr(entry_type, "value") else str(entry_type or "")
+            sl = getattr(ep, "stop_loss", None) if ep else None
+            tp1 = getattr(ep, "take_profit_1", None) if ep else None
+            rr = getattr(ep, "risk_reward_to_tp1", None) if ep else None
+            reason = getattr(ai_decision, "main_reason", "")
+
+            d_emoji = "\U0001f7e2" if d_val == "BUY" else "\U0001f534"
+            lines.append("")
+            lines.append(f"{d_emoji} <b>Setup: {d_val} {et_val}</b> | \u2705 {conf:.0%} prob")
+            if sl:
+                lines.append(f"SL: <code>{sl}</code>")
+            if tp1:
+                rr_str = f"  R:R {rr:.1f}" if rr else ""
+                lines.append(f"TP1: <code>{tp1}</code>{rr_str}")
+            if reason:
+                lines.append(f"\U0001f4ac <i>{reason[:150]}</i>")
+        except Exception:
+            pass
+
+    return await send_message("\n".join(lines))
 
 
 async def notify_trade_rejected(reason: str, decision=None) -> bool:

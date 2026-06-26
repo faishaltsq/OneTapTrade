@@ -73,7 +73,24 @@ async def draw_and_capture_multi_tf(
             pass
 
         try:
-            screenshot = await tools.capture_screenshot("chart")
+            await tools._client.try_call_tool("ui_evaluate", {
+                "expression": """
+(function() {
+    try {
+        var chart = window.TradingViewApi._activeChartWidgetWV.value();
+        if (chart && chart._chartWidget) {
+            var pane = chart._chartWidget.panes()[0];
+            if (pane) pane.setPriceScaleVisible(true, 'right');
+        }
+    } catch(e) {}
+})()
+"""
+            }, timeout=3.0)
+        except Exception:
+            pass
+
+        try:
+            screenshot = await tools.capture_screenshot("full")
             if screenshot:
                 results.append({
                     "timeframe": tf,

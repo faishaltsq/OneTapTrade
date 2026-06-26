@@ -283,7 +283,7 @@ class TradingLoop:
             if exec_result.get("success"):
                 try:
                     from app.telegram_bot.bot import notify_trade_executed
-                    await notify_trade_executed(exec_result)
+                    await notify_trade_executed(exec_result, ai_decision=ai_decision)
                 except Exception as e:
                     logger.error(f"Failed to send execution notice: {e}")
             else:
@@ -315,7 +315,7 @@ class TradingLoop:
             if exec_result.get("success"):
                 try:
                     from app.telegram_bot.bot import notify_trade_executed
-                    await notify_trade_executed(exec_result)
+                    await notify_trade_executed(exec_result, ai_decision=ai_decision)
                 except Exception as e:
                     logger.error(f"Failed to send execution notice: {e}")
             else:
