@@ -46,15 +46,23 @@ def _check_closed_trades_for_post_mortem() -> None:
             if ticket not in mt5_tickets:
                 try:
                     import MetaTrader5 as mt5
-                    deals = mt5.history_deals_get(ticket=ticket)
+
                     close_price = None
                     profit = None
-                    if deals:
-                        for d in deals:
-                            if d.entry == mt5.DEAL_ENTRY_OUT:
-                                close_price = d.price
-                                profit = d.profit
-                                break
+
+                    orders = mt5.history_orders_get(ticket=ticket)
+                    position_id = None
+                    if orders and len(orders) > 0:
+                        position_id = orders[0].position_id
+
+                    if position_id:
+                        deals = mt5.history_deals_get(position=position_id)
+                        if deals:
+                            for d in deals:
+                                if d.entry == mt5.DEAL_ENTRY_OUT:
+                                    close_price = d.price
+                                    profit = d.profit
+                                    break
 
                     update_trade_status(
                         trade_id=trade_id,
