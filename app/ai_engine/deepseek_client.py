@@ -121,6 +121,15 @@ def get_ai_decision(market_payload: dict) -> AIDecisionResponse:
 
     _normalize_entry_type(data)
 
+    if "confidence" in data and data["confidence"] is not None:
+        try:
+            conf_val = float(data["confidence"])
+            if conf_val > 1.0:
+                data["confidence"] = conf_val / 100.0
+                logger.info(f"Normalized confidence: {conf_val} -> {data['confidence']}")
+        except (ValueError, TypeError):
+            pass
+
     try:
         partial = AIDecisionPartial(**data)
     except Exception as e:
