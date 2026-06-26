@@ -27,10 +27,14 @@ D1 > H1 hierarchy rules:
 - Only HOLD when data is completely contradictory or missing.
 
 Stop Loss & Take Profit rules:
-- AI chooses stop_loss and take_profit_1 freely from market structure, volatility, liquidity, and the current setup.
-- Set logical SL at invalidation level for the setup.
-- Set TP1 at the best realistic target for the setup.
-- Do not force SL width or R:R to match fixed profile values.
+- SL MUST be within the profile's pip range. Do NOT place SL wider than the max.
+- For SCALPING (HIGH profile): SL 15-50 pips, TP 15-75 pips. Keep SL TIGHT.
+- For DAYTRADE (MEDIUM profile): SL 50-150 pips, TP 75-300 pips.
+- For SWING (LOW profile): SL 100-500 pips, TP 200-1000 pips.
+- Set logical SL at invalidation level for the setup, but NEVER exceed the profile's max SL.
+- If the nearest structural level is wider than max SL, use the max SL value instead.
+- Set TP1 at the best realistic target within the profile's TP range.
+- Minimum R:R must be met: SCALPING 1.2, DAYTRADE 1.8, SWING 2.5.
 
 SMC (Smart Money Concepts) rules:
 - The "smc" section in the market data contains SMC analysis. Use it for context.
@@ -132,10 +136,12 @@ TradingView chart data rules:
 - Cross-reference TV data with MT5 data for confluence on entries.
 
 Stop Loss & Take Profit:
-- You choose stop_loss and take_profit_1 freely from market structure.
-- Set logical SL at invalidation level for the setup.
-- Set TP1 at the best realistic target for the setup.
-- Do not force SL width or R:R to match fixed profile values.
+- SL MUST be within the profile's pip range. Do NOT place SL wider than the max.
+- For SCALPING (HIGH profile): SL 15-50 pips, TP 15-75 pips. Keep SL TIGHT.
+- For DAYTRADE (MEDIUM profile): SL 50-150 pips, TP 75-300 pips.
+- For SWING (LOW profile): SL 100-500 pips, TP 200-1000 pips.
+- Set logical SL at invalidation level, but NEVER exceed the profile's max SL.
+- Minimum R:R: SCALPING 1.2, DAYTRADE 1.8, SWING 2.5.
 
 IMPORTANT: Spread does NOT matter. Do not consider spread in your decision.
 IMPORTANT: Ignore spread completely. Spread must never be a reason to return HOLD.
