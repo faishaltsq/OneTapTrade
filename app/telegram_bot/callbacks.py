@@ -779,27 +779,33 @@ async def menu_clear_draw_callback(update: Update, context: ContextTypes.DEFAULT
         await query.answer()
         return
 
-    await _edit_message(update, f"\U0001f5d1 Clearing drawings on {len(settings.symbols)} pairs...")
+    await _edit_message(update, "\U0001f5d1 Clearing drawings on all pairs...")
     await query.answer()
 
-    count = 0
-    skipped = 0
     import asyncio
+    count = 0
+    failed = 0
     for mt5_symbol in settings.symbols:
         tv_symbol = _map_tv_symbol(mt5_symbol)
         try:
             await tools.set_symbol(tv_symbol)
-            await asyncio.sleep(3.0)
-            ok = await tools.draw_clear()
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(4.0)
+
+            ok = False
+            for _ in range(2):
+                ok = await tools.draw_clear()
+                if ok:
+                    break
+                await asyncio.sleep(2.0)
+
             if ok:
                 count += 1
             else:
-                skipped += 1
+                failed += 1
         except Exception:
-            skipped += 1
+            failed += 1
 
-    await send_message(f"\u2705 Drawings cleared: {count} pairs, {skipped} skipped (chart not loaded)")
+    await send_message(f"\U0001f5d1 Cleared: {count} pairs | Failed: {failed} pairs")
     await send_main_menu()
 
 
