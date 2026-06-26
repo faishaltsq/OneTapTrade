@@ -322,13 +322,6 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
         take_profit = getattr(entry_plan, "take_profit_1", None) if entry_plan else None
 
         from app.services.tv_autochart_service import draw_and_capture_multi_tf
-        from app.analysis.tf_analysis import build_per_tf_analysis
-
-        tfs = ["D1", "H1", "M5"]
-
-        current_price = (market_payload or {}).get("current_price", {})
-        mid = current_price.get("mid", 0)
-        tf_analysis = build_per_tf_analysis(market_payload or {}, decision_str or "HOLD", mid)
 
         charts = await draw_and_capture_multi_tf(
             mt5_symbol=symbol,
@@ -336,7 +329,7 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
             entry_price=entry_price,
             stop_loss=stop_loss,
             take_profit=take_profit,
-            timeframes=tfs,
+            timeframes=["M5"],
             market_payload=market_payload,
         )
 
@@ -352,65 +345,29 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
 
         from io import BytesIO
 
-        for i, chart in enumerate(charts):
-            img_data = chart["image"]
-            tf = chart["timeframe"]
-            tf_caption = tf_analysis.get(tf, f"\U0001f4ca {tf}")
-
-            if i == 0:
-                full_caption = f"{tf_caption}\n\n{signal_text}"
-            else:
-                full_caption = tf_caption
-
-            img = BytesIO(img_data)
-            img.name = f"{symbol}_{tf}.png"
-            await _application.bot.send_photo(
-                chat_id=chat_id,
-                photo=img,
-                caption=full_caption,
-                parse_mode="HTML",
-                reply_markup=reply_markup if i == 0 else None,
-            )
+        chart = charts[0]
+        img_data = chart["image"]
+        img = BytesIO(img_data)
+        img.name = f"{symbol}_M5.png"
+        await _application.bot.send_photo(
+            chat_id=chat_id,
+            photo=img,
+            caption=signal_text,
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+        )
 
         try:
             from app.signal_bot import broadcast_signal
-            from telegram import InputMediaPhoto
-
-            media_group = []
-            for i, chart in enumerate(charts):
-                img_data = chart["image"]
-                tf = chart["timeframe"]
-                tf_caption = tf_analysis.get(tf, f"\U0001f4ca {tf}")
-                img = BytesIO(img_data)
-                img.name = f"{symbol}_{tf}.png"
-                if i == 0:
-                    cap = f"{tf_caption}\n\n{signal_text}"
-                else:
-                    cap = tf_caption
-                media_group.append(
-                    InputMediaPhoto(media=img, caption=cap, parse_mode="HTML")
-                )
-
-            from app.signal_bot import is_signal_ready, _signal_bot
-            if is_signal_ready() and _signal_bot:
-                await _signal_bot.send_media_group(
-                    chat_id=settings.signal_channel_id,
-                    media=media_group,
-                )
-                logger.info(f"Signal broadcast (album) to channel: {symbol} {decision_str}")
+            ok = await broadcast_signal(signal_text, img_data)
+            if ok:
+                logger.info(f"Signal broadcast to channel: {symbol} {decision_str}")
             else:
-                logger.warning(f"Signal bot not ready for album broadcast")
+                logger.warning(f"Signal broadcast FAILED for {symbol}")
         except Exception as e:
             logger.warning(f"Signal broadcast error: {e}")
 
-            try:
-                from app.signal_bot import broadcast_signal
-                first_img = charts[0]["image"] if charts else None
-                await broadcast_signal(signal_text, first_img)
-            except Exception:
-                pass
-
-        logger.info(f"Trade signal with {len(charts)} charts sent for {symbol}")
+        logger.info(f"Trade signal sent for {symbol}")
         return True
     except Exception as e:
         logger.error(f"Failed to send trade signal: {e}")

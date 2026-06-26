@@ -503,7 +503,34 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
         f"{d_emoji} <b>{_escape_html(symbol)}</b> — {_escape_html(d1_bias)} {align_emoji} H1 {_escape_html(h1_bias)}",
         f"<i>{_escape_html(hierarchy)}</i>",
         "",
+        "<b>-- Multi-TF Breakdown --</b>",
     ]
+
+    d1_section = payload.get("higher_timeframe", {})
+    h1_section = payload.get("primary_timeframe", {})
+    m5_section = payload.get("entry_timeframe", {})
+
+    def _tf_summary(section, label):
+        if not section:
+            return f"{label}: N/A"
+        ms = section.get("market_structure", {}) if isinstance(section, dict) else {}
+        ind = section.get("indicators", {}) if isinstance(section, dict) else {}
+        trend = ms.get("trend") or ms.get("bias") or "UNCLEAR"
+        rsi = ind.get("rsi_14")
+        rsi_s = ""
+        if rsi:
+            try:
+                r = float(rsi)
+                rsi_s = f" | RSI {r:.0f}"
+            except (ValueError, TypeError):
+                pass
+        ema = _ema_bias(ind)
+        return f"{label}: {trend}{rsi_s} | EMA {ema}"
+
+    lines.append(_tf_summary(d1_section, "D1"))
+    lines.append(_tf_summary(h1_section, "H1"))
+    lines.append(_tf_summary(m5_section, "M5"))
+    lines.append("")
 
     if decision_str in ("BUY", "SELL"):
         lines.append(f"<b>Signal:</b> {_escape_html(decision_str)} {_escape_html(entry_type or '')} | {c_emoji} <b>{confidence:.0%}</b>")
