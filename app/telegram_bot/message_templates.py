@@ -562,15 +562,25 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
         if tp2:
             lines.append(f"TP2: <code>{_fmt_num(tp2)}</code>")
 
-        if bid and ask and stop_loss and tp1:
+        if entry_price and stop_loss and tp1:
             try:
-                mid = (float(bid) + float(ask)) / 2.0
-                risk_pts = abs(mid - float(stop_loss))
-                reward_pts = abs(float(tp1) - mid)
-                lines.append(f"Risk: \u00b1{risk_pts:.1f} points")
-                lines.append(f"Reward: \u00b1{reward_pts:.1f} points")
+                ep = float(entry_price)
+                sl = float(stop_loss)
+                tp = float(tp1)
+                risk_pts = abs(ep - sl)
+                reward_pts = abs(tp - ep)
+                if risk_pts > 0:
+                    lines.append(f"Risk: {risk_pts:.5f} ({risk_pts * 10:.1f} pips)")
+                else:
+                    lines.append("Risk: N/A")
+                if reward_pts > 0:
+                    lines.append(f"Reward: {reward_pts:.5f} ({reward_pts * 10:.1f} pips)")
+                else:
+                    lines.append("Reward: N/A")
                 if rr1:
                     lines.append(f"Estimated R:R: {rr1:.1f}")
+                elif risk_pts > 0:
+                    lines.append(f"Estimated R:R: {reward_pts / risk_pts:.1f}")
             except (ValueError, TypeError):
                 pass
 
