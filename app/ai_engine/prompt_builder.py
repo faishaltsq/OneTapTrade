@@ -36,9 +36,11 @@ def build_failure_fewshot(symbol: str = None) -> str:
         return "Tidak ada histori kegagalan tersedia. Evaluasi berdasarkan confluence murni."
 
 
-_SMC_AI_BASE = """You are an AI trading execution analysis engine for a MetaTrader 5 trading system.
+_SMC_AI_BASE = """You are an SMC trading probability analyst for a MetaTrader 5 trading system.
 
 You analyze structured market data and return strict JSON only.
+Analyze only data provided. Do not invent price levels. If confluence weak, return HOLD. Output valid JSON only using existing app schema.
+The smc_probability object contains a deterministic pre_ai_decision. If it is WAIT or NO_TRADE, you must return HOLD. Do not override WAIT or NO_TRADE into BUY or SELL.
 
 D1 major trend is a hard filter.
 - D1_BULLISH means only BUY decisions are allowed.
@@ -56,7 +58,6 @@ D1 > H1 hierarchy rules:
 - D1_BEARISH + H1_NEUTRAL = SELL allowed but await H1 confirmation candle.
 - D1_RANGING = no bias. Only trade if breakout+retest confirmed AND H1 aligns with that direction.
 - The "major_trend.d1_h1_hierarchy" field in the market data gives the pre-computed hierarchy guidance — follow it.
-- Be AGGRESSIVE — prefer BUY or SELL over HOLD when hierarchy is aligned.
 - Only HOLD when data is completely contradictory or missing.
 
 Stop Loss & Take Profit rules:
@@ -147,9 +148,6 @@ Return HOLD only when:
 - Price is inside a very tight range with no direction.
 - H1 and M5 strongly conflict (e.g., H1 bullish but M5 crashing).
 
-IMPORTANT: Spread does NOT matter. Do not consider spread in your decision.
-IMPORTANT: Ignore spread completely. Spread must never be a reason to return HOLD.
-IMPORTANT: Be aggressive with entries. Missing a trade is worse than taking a small loss.
 IMPORTANT: For BUY or SELL, you must include entry_plan.stop_loss, entry_plan.take_profit_1, entry_plan.preferred_entry_price, and entry_plan.risk_reward_to_tp1.
 IMPORTANT: For BUY or SELL, set execution_permission.ai_allows_execution to true with a brief reason.
 
@@ -253,8 +251,84 @@ def build_system_prompt(symbol: str = None) -> str:
     return _SMC_AI_BASE.format(style_block=style_block, failure_fewshot=fewshot)
 
 
+def _tail(items, limit=5):
+    if not isinstance(items, list):
+        return items
+    return items[-limit:]
+
+
+def _limit_nested_lists(value, limit=5):
+    if isinstance(value, list):
+        return [_limit_nested_lists(item, limit) for item in value[-limit:]]
+    if isinstance(value, dict):
+        return {k: _limit_nested_lists(v, limit) for k, v in value.items()}
+    return value
+
+
+def _compact_timeframe(section: dict | None) -> dict:
+    section = section or {}
+    structure = section.get("market_structure", {}) if isinstance(section, dict) else {}
+    return {
+        "timeframe": section.get("timeframe"),
+        "bars_count": section.get("bars_count"),
+        "current_candle": section.get("current_candle", {}),
+        "indicators": section.get("indicators", {}),
+        "market_structure": {
+            k: v for k, v in structure.items()
+            if k not in {"support_resistance"}
+        },
+        "orderflow": section.get("orderflow"),
+    }
+
+
+def _compact_smc(smc: dict | None) -> dict:
+    smc = smc or {}
+    order_blocks = smc.get("order_blocks", {}) if isinstance(smc.get("order_blocks"), dict) else {}
+    return {
+        "choch": _limit_nested_lists(smc.get("choch", {}), 5),
+        "order_blocks": {
+            "demand": _tail(order_blocks.get("demand", []), 3),
+            "supply": _tail(order_blocks.get("supply", []), 3),
+        },
+        "fvg_zones": _tail(smc.get("fvg_zones", []), 5),
+        "liquidity_levels": _tail(smc.get("liquidity_levels", []), 5),
+        "recent_h1_swings": {
+            "highs": _tail((smc.get("h1_swings", {}) or {}).get("highs", []), 5),
+            "lows": _tail((smc.get("h1_swings", {}) or {}).get("lows", []), 5),
+        },
+        "recent_m5_swings": {
+            "highs": _tail((smc.get("m5_swings", {}) or {}).get("highs", []), 5),
+            "lows": _tail((smc.get("m5_swings", {}) or {}).get("lows", []), 5),
+        },
+    }
+
+
+def compact_market_payload_for_prompt(market_payload: dict) -> dict:
+    return {
+        "symbol": market_payload.get("symbol"),
+        "timestamp": market_payload.get("timestamp"),
+        "current_price": market_payload.get("current_price", {}),
+        "higher_timeframe": _compact_timeframe(market_payload.get("higher_timeframe")),
+        "secondary_timeframe": _compact_timeframe(market_payload.get("secondary_timeframe")),
+        "primary_timeframe": _compact_timeframe(market_payload.get("primary_timeframe")),
+        "entry_timeframe": _compact_timeframe(market_payload.get("entry_timeframe")),
+        "overall_regime": market_payload.get("overall_regime", {}),
+        "orderflow_proxy": market_payload.get("orderflow_proxy", {}),
+        "smc": _compact_smc(market_payload.get("smc")),
+        "major_trend": market_payload.get("major_trend", {}),
+        "open_position_state": market_payload.get("open_position_state", {}),
+        "account_context": market_payload.get("account_context", {}),
+        "risk_config": market_payload.get("risk_config", {}),
+        "tv_available": market_payload.get("tv_available", False),
+        "tv_chart_context": market_payload.get("tv_chart_context"),
+        "smc_probability": market_payload.get("smc_probability", {}),
+        "profile_timeframes": market_payload.get("profile_timeframes", {}),
+    }
+
+
 def build_user_prompt(market_payload: dict) -> str:
-    payload_json = json.dumps(market_payload, indent=2)
+    prompt_payload = compact_market_payload_for_prompt(market_payload)
+    payload_json = json.dumps(prompt_payload, separators=(",", ":"))
     mode_label = "SMC+AI" if settings.strategy_mode == "SMC_AI" else "AI Only"
     style_label = settings.effective_style
     entry_tfs = "/".join(settings.effective_entry_tfs)
@@ -273,5 +347,6 @@ def build_user_prompt(market_payload: dict) -> str:
         f"Risk profile: {settings.risk_profile}\n"
         f"Minimum confidence: {settings.effective_min_confidence:.0%}\n"
         f"{tv_note}"
+        f"Use smc_probability as the deterministic base score. AI may adjust reasoning but should not override hard NO_TRADE risk gates.\n"
         f"Market data:\n{payload_json}"
     )

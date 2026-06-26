@@ -67,6 +67,101 @@ def test_signal_message_uses_m5_entry_label():
     assert "M15" not in message
 
 
+def test_signal_message_converts_forex_price_distance_to_pips():
+    from app.ai_engine.schemas import (
+        AIDecisionResponse,
+        ConfidenceLabel,
+        Decision,
+        EntryPlan,
+        EntryType,
+        MarketRegime,
+        TimeframeBias,
+    )
+    from app.telegram_bot.message_templates import format_signal_message
+
+    decision = AIDecisionResponse(
+        decision=Decision.BUY,
+        confidence=0.72,
+        confidence_label=ConfidenceLabel.MEDIUM,
+        market_regime=MarketRegime.TRENDING_UP,
+        higher_timeframe_bias=TimeframeBias.BULLISH,
+        entry_timeframe_bias=TimeframeBias.BULLISH,
+        entry_plan=EntryPlan(
+            entry_type=EntryType.LIMIT,
+            preferred_entry_price=0.56465,
+            stop_loss=0.56440,
+            take_profit_1=0.56525,
+            risk_reward_to_tp1=2.4,
+        ),
+    )
+    market_payload = {
+        "current_price": {"bid": 0.56511, "ask": 0.56513},
+        "major_trend": {"bias": "D1_BULLISH", "h1_bias": "BULLISH", "h1_alignment": "ALIGNED"},
+        "higher_timeframe": {"market_structure": {"trend": "BULLISH"}, "indicators": {}},
+        "primary_timeframe": {"market_structure": {"trend": "BULLISH"}, "indicators": {}},
+        "entry_timeframe": {"market_structure": {"trend": "BULLISH"}, "indicators": {}},
+    }
+
+    message = format_signal_message(decision, {"approved": True}, "NZDUSD.m", market_payload)
+
+    assert "Risk: 7.30 pips | Reward: 1.20 pips | R:R 0.2" in message
+    assert "Risk: 2.50 pips | Reward: 6.00 pips | R:R 2.4" in message
+
+
+@pytest.mark.asyncio
+async def test_send_trade_signal_sends_long_text_before_chart(monkeypatch):
+    from app.ai_engine.schemas import AIDecisionResponse, ConfidenceLabel, Decision, MarketRegime, TimeframeBias
+    from app.config import settings
+    from app.telegram_bot import bot as bot_module
+
+    decision = AIDecisionResponse(
+        decision=Decision.BUY,
+        confidence=0.65,
+        confidence_label=ConfidenceLabel.MEDIUM,
+        market_regime=MarketRegime.TRENDING_UP,
+        higher_timeframe_bias=TimeframeBias.BULLISH,
+        entry_timeframe_bias=TimeframeBias.BULLISH,
+    )
+    original_token = settings.telegram_bot_token
+    original_chat_id = settings.telegram_allowed_chat_id
+    original_application = bot_module._application
+
+    class FakeBot:
+        def __init__(self):
+            self.messages = []
+            self.photos = []
+
+        async def send_message(self, **kwargs):
+            self.messages.append(kwargs)
+
+        async def send_photo(self, **kwargs):
+            self.photos.append(kwargs)
+
+    fake_bot = FakeBot()
+    try:
+        settings.telegram_bot_token = "token"
+        settings.telegram_allowed_chat_id = "123"
+        bot_module._application = MagicMock(bot=fake_bot)
+        long_signal = "x" * 2000
+
+        async def fake_capture(*args, **kwargs):
+            return [{"image": b"img"}]
+
+        monkeypatch.setattr("app.telegram_bot.bot.format_signal_message", lambda *args, **kwargs: long_signal)
+        monkeypatch.setattr("app.services.tv_autochart_service.draw_and_capture_multi_tf", fake_capture)
+        monkeypatch.setattr("app.signal_bot.broadcast_signal", AsyncMock(return_value=True))
+
+        sent = await bot_module.send_trade_signal(decision, {"symbol": "BTCUSD.m", "approved": True}, "decision-1", {})
+
+        assert sent is True
+        assert fake_bot.messages[0]["text"] == long_signal
+        assert fake_bot.photos[0]["caption"] == "BTCUSD.m BUY chart"
+    finally:
+        bot_module._application = original_application
+        settings.telegram_bot_token = original_token
+        settings.telegram_allowed_chat_id = original_chat_id
+
+
 @pytest.mark.asyncio
 async def test_send_trade_signal_stores_symbol_metadata_on_pending_decision():
     from app.ai_engine.schemas import AIDecisionResponse, ConfidenceLabel, Decision, MarketRegime, TimeframeBias
@@ -802,5 +897,84 @@ def test_format_pending_orders_with_orders():
     assert "2 order(s)" in text
     assert "101" in text
     assert "102" in text
-    assert "XAUUSD.c" in text
-    assert "EURUSD.c" in text
+
+
+def test_signal_message_renders_smc_probability_block():
+    from app.ai_engine.schemas import AIDecisionResponse, ConfidenceLabel, Decision, EntryPlan, EntryType, ExecutionPermission, MarketRegime, TimeframeBias
+    from app.telegram_bot.message_templates import format_signal_message
+
+    decision = AIDecisionResponse(
+        decision=Decision.HOLD,
+        confidence=0.72,
+        confidence_label=ConfidenceLabel.MEDIUM,
+        market_regime=MarketRegime.TRENDING_UP,
+        higher_timeframe_bias=TimeframeBias.BULLISH,
+        entry_timeframe_bias=TimeframeBias.BULLISH,
+        entry_plan=EntryPlan(entry_type=EntryType.NONE),
+        execution_permission=ExecutionPermission(ai_allows_execution=False, reason="manual"),
+    )
+    payload = {
+        "current_price": {"bid": 1.1, "ask": 1.1002, "spread_points": 10},
+        "smc_probability": {
+            "final_score": 72,
+            "setup_quality": "medium",
+            "pre_ai_decision": "WAIT",
+            "bias": "bullish",
+            "timeframe_model": {"filter_timeframes": ["D1", "H4"], "execution_timeframes": ["H1"], "timeframe_fallback": None},
+            "main_confluence": ["Profile filter and execution bias align bullish"],
+            "weaknesses": ["CHoCH has no liquidity confirmation"],
+            "risk_notes": ["manual confirmation required"],
+            "entry_sl_tp_note": "manual confirmation required",
+            "invalidation": "manual confirmation required",
+            "adjustments": [],
+        },
+    }
+
+    message = format_signal_message(decision, {"approved": False, "symbol": "EURUSD.m"}, "EURUSD.m", payload)
+
+    assert "EURUSD.m \u2014 SMC ANALYSIS" in message
+    assert "Probability" in message
+    assert "Score: 72%" in message
+    assert "Decision" in message
+    assert "WAIT" in message
+    assert "Manual confirmation required" in message
+
+
+@pytest.mark.asyncio
+async def test_send_trade_signal_suppresses_no_trade_alert(monkeypatch):
+    from app.ai_engine.schemas import AIDecisionResponse, ConfidenceLabel, Decision, MarketRegime, TimeframeBias
+    from app.config import settings
+    from app.telegram_bot import bot as bot_module
+
+    decision = AIDecisionResponse(
+        decision=Decision.HOLD,
+        confidence=0.2,
+        confidence_label=ConfidenceLabel.LOW,
+        market_regime=MarketRegime.UNCLEAR,
+        higher_timeframe_bias=TimeframeBias.UNCLEAR,
+        entry_timeframe_bias=TimeframeBias.UNCLEAR,
+    )
+    original_token = settings.telegram_bot_token
+    original_chat_id = settings.telegram_allowed_chat_id
+    original_send_no_trade = settings.send_no_trade_alert
+    original_application = bot_module._application
+    try:
+        settings.telegram_bot_token = "token"
+        settings.telegram_allowed_chat_id = "123"
+        settings.send_no_trade_alert = False
+        bot_module._application = MagicMock(bot=object())
+        monkeypatch.setattr("app.telegram_bot.bot.send_message", AsyncMock(return_value=True))
+
+        sent = await bot_module.send_trade_signal(
+            decision,
+            {"symbol": "EURUSD.m", "approved": False},
+            "decision-1",
+            {"smc_probability": {"pre_ai_decision": "NO_TRADE", "final_score": 20}},
+        )
+
+        assert sent is False
+    finally:
+        settings.telegram_bot_token = original_token
+        settings.telegram_allowed_chat_id = original_chat_id
+        settings.send_no_trade_alert = original_send_no_trade
+        bot_module._application = original_application

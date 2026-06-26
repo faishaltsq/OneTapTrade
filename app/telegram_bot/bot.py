@@ -24,6 +24,7 @@ async def capture_tv_screenshot() -> Optional[bytes]:
 _application: Optional[Application] = None
 _pending_decisions: dict = {}
 _decision_symbols: dict[str, str] = {}
+_decision_payloads: dict[str, dict] = {}
 _trading_loop_ref = None
 _bot_stop_event: Optional[asyncio.Event] = None
 _bot_initialized = False
@@ -297,6 +298,18 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
 
     try:
         symbol = risk_result.get("symbol", settings.default_symbol)
+        smc_probability = (market_payload or {}).get("smc_probability") or {}
+        semantic_decision = str(smc_probability.get("pre_ai_decision") or "").upper()
+        final_score = smc_probability.get("final_score")
+        if semantic_decision == "NO_TRADE" and not settings.send_no_trade_alert:
+            logger.info(f"Telegram signal suppressed for {symbol}: NO_TRADE and SEND_NO_TRADE_ALERT=false")
+            return False
+        if final_score is not None and float(final_score) < settings.min_signal_probability and semantic_decision != "NO_TRADE":
+            logger.info(
+                f"Telegram signal suppressed for {symbol}: probability {float(final_score):.0f} "
+                f"below {settings.min_signal_probability}"
+            )
+            return False
         signal_text = format_signal_message(decision, risk_result, symbol, market_payload=market_payload)
         chat_id = settings.telegram_allowed_chat_id
         decision_str = getattr(decision, "decision", None)
@@ -315,26 +328,30 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
 
         _decision_symbols[decision_id] = symbol
         _pending_decisions[decision_id] = decision
+        if market_payload:
+            _decision_payloads[decision_id] = market_payload
 
         entry_plan = getattr(decision, "entry_plan", None)
         entry_price = getattr(entry_plan, "preferred_entry_price", None) if entry_plan else None
         stop_loss = getattr(entry_plan, "stop_loss", None) if entry_plan else None
         take_profit = getattr(entry_plan, "take_profit_1", None) if entry_plan else None
 
-        from app.services.tv_autochart_service import draw_and_capture_multi_tf
+        charts = []
+        if market_payload is not None:
+            from app.services.tv_autochart_service import draw_and_capture_multi_tf
 
-        charts = await draw_and_capture_multi_tf(
-            mt5_symbol=symbol,
-            decision=decision_str or "HOLD",
-            entry_price=entry_price,
-            stop_loss=stop_loss,
-            take_profit=take_profit,
-            timeframes=["M5"],
-            market_payload=market_payload,
-        )
+            charts = await draw_and_capture_multi_tf(
+                mt5_symbol=symbol,
+                decision=decision_str or "HOLD",
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                timeframes=["M5"],
+                market_payload=market_payload,
+            )
 
         if not charts:
-            await send_message(signal_text, reply_markup=reply_markup)
+            text_sent = await send_message(signal_text, reply_markup=reply_markup)
             try:
                 from app.signal_bot import broadcast_signal
                 ok = await broadcast_signal(signal_text)
@@ -342,21 +359,57 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
                     logger.info(f"Signal broadcast (text-only) to channel: {symbol} {decision_str}")
             except Exception:
                 pass
-            return False
-
-        from io import BytesIO
+            return text_sent
 
         chart = charts[0]
         img_data = chart["image"]
+        if len(signal_text) > 1000:
+            text_sent = await send_message(signal_text, reply_markup=reply_markup)
+            if not text_sent:
+                return False
+
+            from io import BytesIO
+
+            img = BytesIO(img_data)
+            img.name = f"{symbol}_M5.png"
+            await _application.bot.send_photo(
+                chat_id=chat_id,
+                photo=img,
+                caption=f"{symbol} {decision_str} chart",
+                parse_mode="HTML",
+            )
+
+            try:
+                from app.signal_bot import broadcast_signal
+                ok = await broadcast_signal(signal_text)
+                if ok:
+                    await broadcast_signal(f"{symbol} {decision_str} chart", img_data)
+                    logger.info(f"Signal broadcast to channel: {symbol} {decision_str}")
+                else:
+                    logger.warning(f"Signal broadcast FAILED for {symbol}")
+            except Exception as e:
+                logger.warning(f"Signal broadcast error: {e}")
+
+            logger.info(f"Trade signal sent for {symbol}")
+            return True
+
+        from io import BytesIO
+
         img = BytesIO(img_data)
         img.name = f"{symbol}_M5.png"
-        await _application.bot.send_photo(
-            chat_id=chat_id,
-            photo=img,
-            caption=signal_text,
-            parse_mode="HTML",
-            reply_markup=reply_markup,
-        )
+        try:
+            await _application.bot.send_photo(
+                chat_id=chat_id,
+                photo=img,
+                caption=signal_text,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+        except Exception as e:
+            logger.warning(f"Signal chart send failed, falling back to text: {e}")
+            text_sent = await send_message(signal_text, reply_markup=reply_markup)
+            if not text_sent:
+                return False
 
         try:
             from app.signal_bot import broadcast_signal

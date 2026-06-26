@@ -21,6 +21,51 @@ def _mt5_to_tv_symbol(mt5_symbol: str) -> str:
     return TV_SYMBOL_MAP.get(symbol, symbol)
 
 
+def _get_closed_trade_result(trade: dict) -> dict:
+    ticket = trade.get("mt5_ticket")
+    if not ticket:
+        return {"close_price": None, "profit": None}
+
+    import MetaTrader5 as mt5
+
+    position_id = None
+    orders = mt5.history_orders_get(ticket=ticket)
+    if orders and len(orders) > 0:
+        position_id = getattr(orders[0], "position_id", None)
+
+    deals = None
+    if position_id:
+        deals = mt5.history_deals_get(position=position_id)
+
+    if not deals:
+        deals = mt5.history_deals_get(position=ticket)
+
+    if not deals:
+        deals = mt5.history_deals_get(ticket=ticket)
+
+    if not deals:
+        return {"close_price": None, "profit": None}
+
+    closing_entries = {
+        getattr(mt5, "DEAL_ENTRY_OUT", 1),
+        getattr(mt5, "DEAL_ENTRY_INOUT", 2),
+        getattr(mt5, "DEAL_ENTRY_OUT_BY", 3),
+    }
+    closing_deals = [d for d in deals if getattr(d, "entry", None) in closing_entries]
+    if not closing_deals:
+        return {"close_price": None, "profit": None}
+
+    profit = 0.0
+    close_price = None
+    for deal in closing_deals:
+        close_price = getattr(deal, "price", close_price)
+        profit += float(getattr(deal, "profit", 0.0) or 0.0)
+        profit += float(getattr(deal, "swap", 0.0) or 0.0)
+        profit += float(getattr(deal, "commission", 0.0) or 0.0)
+
+    return {"close_price": close_price, "profit": round(profit, 10)}
+
+
 def _check_closed_trades_for_post_mortem() -> None:
     try:
         from app.database.repositories import get_open_trades, update_trade_status
@@ -45,24 +90,9 @@ def _check_closed_trades_for_post_mortem() -> None:
 
             if ticket not in mt5_tickets:
                 try:
-                    import MetaTrader5 as mt5
-
-                    close_price = None
-                    profit = None
-
-                    orders = mt5.history_orders_get(ticket=ticket)
-                    position_id = None
-                    if orders and len(orders) > 0:
-                        position_id = orders[0].position_id
-
-                    if position_id:
-                        deals = mt5.history_deals_get(position=position_id)
-                        if deals:
-                            for d in deals:
-                                if d.entry == mt5.DEAL_ENTRY_OUT:
-                                    close_price = d.price
-                                    profit = d.profit
-                                    break
+                    closed_result = _get_closed_trade_result(trade)
+                    close_price = closed_result["close_price"]
+                    profit = closed_result["profit"]
 
                     update_trade_status(
                         trade_id=trade_id,
@@ -347,9 +377,13 @@ class TradingLoop:
             logger.info("AUTO_DEMO mode — sending signal then executing trade")
             try:
                 from app.telegram_bot.bot import send_trade_signal
-                await send_trade_signal(ai_decision, risk_result, decision_id or "", signal_result.get("market_payload"))
+                signal_sent = await send_trade_signal(ai_decision, risk_result, decision_id or "", signal_result.get("market_payload"))
+                if not signal_sent:
+                    logger.warning("AUTO_DEMO mode — signal notification failed; skipping execution")
+                    return {"success": False, "error": "Signal notification failed; execution skipped"}
             except Exception as e:
                 logger.error(f"Failed to send signal before execution: {e}")
+                return {"success": False, "error": "Signal notification failed; execution skipped"}
 
             exec_result = await self._do_execute(ai_decision, risk_result, symbol, signal_result)
 
@@ -386,9 +420,13 @@ class TradingLoop:
             logger.info("LIVE_AUTO mode — sending signal then executing on live account")
             try:
                 from app.telegram_bot.bot import send_trade_signal
-                await send_trade_signal(ai_decision, risk_result, decision_id or "", signal_result.get("market_payload"))
+                signal_sent = await send_trade_signal(ai_decision, risk_result, decision_id or "", signal_result.get("market_payload"))
+                if not signal_sent:
+                    logger.warning("LIVE_AUTO mode — signal notification failed; skipping execution")
+                    return {"success": False, "error": "Signal notification failed; execution skipped"}
             except Exception as e:
                 logger.error(f"Failed to send signal before execution: {e}")
+                return {"success": False, "error": "Signal notification failed; execution skipped"}
 
             exec_result = await self._do_execute(ai_decision, risk_result, symbol, signal_result)
 
@@ -468,7 +506,17 @@ class TradingLoop:
             from app.services.execution_service import execute_trade
 
             market_payload = signal_result.get("market_payload")
-            return await asyncio.to_thread(execute_trade, ai_decision, risk_result, sym_info, balance, bid, ask, market_payload)
+            return await asyncio.to_thread(
+                execute_trade,
+                ai_decision,
+                risk_result,
+                sym_info,
+                balance,
+                bid,
+                ask,
+                market_payload,
+                signal_result.get("decision_id"),
+            )
 
         except Exception as e:
             logger.exception(f"Error during trade execution: {e}")
@@ -556,7 +604,16 @@ class TradingLoop:
 
             from app.services.execution_service import execute_trade
 
-            exec_result = execute_trade(ai_decision, risk_result, sym_info, balance, current_bid, current_ask, None)
+            exec_result = execute_trade(
+                ai_decision,
+                risk_result,
+                sym_info,
+                balance,
+                current_bid,
+                current_ask,
+                None,
+                decision_id,
+            )
 
             self._last_decisions.pop(decision_id, None)
 

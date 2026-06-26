@@ -7,7 +7,7 @@ from telegram.ext import CallbackQueryHandler, ContextTypes
 from app.config import settings
 from app.logger import logger
 from app.mt5_connector.positions import get_today_realized_pnl
-from app.telegram_bot.bot import _pending_decisions, _decision_symbols, get_trading_loop, send_main_menu, send_message
+from app.telegram_bot.bot import _pending_decisions, _decision_symbols, _decision_payloads, get_trading_loop, send_main_menu, send_message
 from app.telegram_bot.message_templates import build_main_menu_keyboard, build_settings_keyboard, format_settings_message
 
 
@@ -95,6 +95,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
             await _edit_message(update, "<b>\u274c Cannot fetch market data. MT5 may be disconnected.</b>")
             _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
+            _decision_payloads.pop(decision_id, None)
             return
 
         current_bid = tick.get("bid", 0.0)
@@ -119,6 +120,9 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
             "daily_drawdown_percent": daily_drawdown_percent,
             "mode": settings.bot_mode,
             "point": sym_info.get("point", 0.01) if sym_info else 0.01,
+            "smc_probability": (_decision_payloads.get(decision_id, {}) or {}).get("smc_probability", {}),
+            "major_trend": (_decision_payloads.get(decision_id, {}) or {}).get("major_trend", {}),
+            "open_position_state": (_decision_payloads.get(decision_id, {}) or {}).get("open_position_state", {}),
         }
 
         from app.risk.risk_manager import evaluate_decision
@@ -139,6 +143,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
             await _edit_message(update, f"<b>\u274c APPROVED but rejected by risk:</b>\n<i>{reason}</i>")
             _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
+            _decision_payloads.pop(decision_id, None)
             return
 
         entry_plan = getattr(decision, "entry_plan", None)
@@ -157,6 +162,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
             await _edit_message(update, "<b>\u274c Cannot fetch account balance.</b>")
             _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
+            _decision_payloads.pop(decision_id, None)
             return
 
         sym_info = get_symbol_info(symbol)
@@ -164,6 +170,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
             await _edit_message(update, "<b>\u274c Cannot fetch symbol info.</b>")
             _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
+            _decision_payloads.pop(decision_id, None)
             return
 
         sl_distance = abs(entry_price - stop_loss) if entry_price and stop_loss else 0.0
@@ -174,6 +181,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
             await _edit_message(update, f"<b>\u274c Position sizing failed:</b> <i>{sizing.get('reason', 'Unknown')}</i>")
             _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
+            _decision_payloads.pop(decision_id, None)
             return
 
         lot = sizing["lot"]
@@ -195,6 +203,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
             await _edit_message(update, "<b>\u274c Failed to build order request.</b>")
             _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
+            _decision_payloads.pop(decision_id, None)
             return
 
         check_result = check_order(order_request)
@@ -202,6 +211,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
             await _edit_message(update, "<b>\u274c Order check failed — returned None.</b>")
             _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
+            _decision_payloads.pop(decision_id, None)
             return
 
         retcode_check = check_result.get("retcode", -1)
@@ -210,6 +220,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
             await _edit_message(update, f"<b>\u274c Order check failed (retcode={retcode_check}):</b> <i>{comment}</i>")
             _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
+            _decision_payloads.pop(decision_id, None)
             return
 
         order_result = send_order(order_request)
@@ -217,6 +228,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
             await _edit_message(update, "<b>\u274c Order send failed. Check logs.</b>")
             _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
+            _decision_payloads.pop(decision_id, None)
             return
 
         retcode = order_result.get("retcode", -1)
@@ -225,6 +237,7 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
             await _edit_message(update, f"<b>\u274c Order failed (retcode={retcode}):</b> <i>{comment}</i>")
             _decision_symbols.pop(decision_id, None)
             _pending_decisions.pop(decision_id, None)
+            _decision_payloads.pop(decision_id, None)
             return
 
         ticket = order_result.get("order")
@@ -265,12 +278,14 @@ async def approve_trade_callback(update: Update, context: ContextTypes.DEFAULT_T
         )
 
         _pending_decisions.pop(decision_id, None)
+        _decision_payloads.pop(decision_id, None)
         logger.info(f"Trade executed via Telegram approval: {decision_str} {symbol} ticket={ticket}")
 
     except Exception as e:
         logger.exception(f"Error in approve_trade_callback: {e}")
         await _edit_message(update, f"<b>\u274c Error executing trade:</b> <i>{str(e)}</i>")
         _pending_decisions.pop(decision_id, None)
+        _decision_payloads.pop(decision_id, None)
 
 
 async def reject_trade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -290,6 +305,7 @@ async def reject_trade_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     await query.answer("Trade rejected")
     _pending_decisions.pop(decision_id, None)
+    _decision_payloads.pop(decision_id, None)
 
     from app.database.repositories import log_bot_event
 

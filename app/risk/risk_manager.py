@@ -19,6 +19,7 @@ def evaluate_decision(ai_decision, market_context: dict) -> dict:
 
         checks = {
             "is_hold": False,
+            "smc_probability_ok": True,
             "confidence_ok": True,
             "risk_reward_ok": True,
             "sl_range_ok": True,
@@ -42,6 +43,26 @@ def evaluate_decision(ai_decision, market_context: dict) -> dict:
         if decision_value == "HOLD":
             checks["is_hold"] = True
             return _add_symbol(_reject(checks, "AI decided HOLD - no trade to execute"), symbol_name)
+
+        smc_probability = market_context.get("smc_probability") or {}
+        semantic_decision = str(smc_probability.get("pre_ai_decision") or "").upper()
+        final_score = smc_probability.get("final_score")
+        checks["smc_probability_ok"] = True
+
+        if smc_probability and semantic_decision in {"NO_TRADE", "WAIT"}:
+            checks["smc_probability_ok"] = False
+            return _add_symbol(_reject(checks, f"SMC probability decision {semantic_decision}"), symbol_name)
+
+        if smc_probability and not semantic_decision:
+            checks["smc_probability_ok"] = False
+            return _add_symbol(_reject(checks, "SMC probability score missing"), symbol_name)
+
+        if final_score is not None and float(final_score) < settings.min_signal_probability:
+            checks["smc_probability_ok"] = False
+            return _add_symbol(_reject(
+                checks,
+                f"SMC probability {float(final_score):.0f} below minimum signal probability {settings.min_signal_probability}",
+            ), symbol_name)
 
         if confidence < settings.effective_min_confidence:
             checks["confidence_ok"] = False

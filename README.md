@@ -196,7 +196,9 @@ API runs on `http://localhost:8000`.
 | `MT5_PATH` | Optional path to `terminal64.exe` | `C:\Program Files\MetaTrader 5\terminal64.exe` |
 | `DEEPSEEK_API_KEY` | DeepSeek API key | keep secret |
 | `DEEPSEEK_BASE_URL` | DeepSeek API base URL | `https://api.deepseek.com` |
-| `DEEPSEEK_MODEL` | DeepSeek model | `deepseek-chat` |
+| `DEEPSEEK_MODEL` | DeepSeek model | `deepseek-v4-pro` |
+| `DEEPSEEK_FALLBACK_MODEL` | Faster fallback model if primary times out | `deepseek-v4-flash` |
+| `DEEPSEEK_TIMEOUT_SECONDS` | Per-request DeepSeek timeout | `120` |
 | `TELEGRAM_BOT_TOKEN` | BotFather token | keep secret |
 | `TELEGRAM_ALLOWED_CHAT_ID` | Allowed Telegram chat ID | your chat ID |
 | `SUPABASE_URL` | Supabase project URL | keep project URL |
@@ -205,6 +207,9 @@ API runs on `http://localhost:8000`.
 | `DEFAULT_SYMBOLS` | Comma-separated symbols for loop | `XAUUSD.c,EURUSD.c,GBPJPY.c,GBPUSD.c` |
 | `RISK_PROFILE` | Risk profile | `LOW`, `MEDIUM`, or `HIGH` |
 | `STRATEGY_MODE` | Strategy thinking mode (`SMC_AI` or `AI_ONLY`) | `SMC_AI` |
+| `MIN_SIGNAL_PROBABILITY` | Minimum SMC setup probability before Telegram/execution | `70` |
+| `SEND_NO_TRADE_ALERT` | Send suppressed `NO_TRADE` analysis | `false` |
+| `ENABLE_AI_REVIEW` | Keep DeepSeek review after deterministic scoring | `true` |
 | `RISK_PER_TRADE_PERCENT` | Account risk per trade | `0.5` |
 | `MAX_DAILY_DRAWDOWN_PERCENT` | Daily drawdown stop | `2.0` |
 | `MAX_OPEN_POSITIONS` | Global position cap unless same-side add-on | `1` |
@@ -212,6 +217,12 @@ API runs on `http://localhost:8000`.
 | `MIN_RISK_REWARD` | Legacy/base risk reward config | `1.5` |
 | `MAX_SPREAD_POINTS` | Legacy spread config, not used as decision blocker | `35` |
 | `TRADING_LOOP_INTERVAL_SECONDS` | Loop interval (`0` = auto from profile: LOW=3600, MEDIUM=900, HIGH=300) | `0` |
+
+### SMC Probability Quality Filter
+
+- `MIN_SIGNAL_PROBABILITY` filters weak SMC setups before Telegram/execution. Default: `70`.
+- `SEND_NO_TRADE_ALERT` sends suppressed `NO_TRADE` analysis when enabled. Default: `false`.
+- `ENABLE_AI_REVIEW` keeps DeepSeek review after deterministic scoring. Default: `true`.
 
 ## Broker Symbol Notes
 

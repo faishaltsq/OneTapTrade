@@ -104,6 +104,7 @@ def build_market_payload(
     tick_data: Optional[pd.DataFrame] = None,
     depth_data: Optional[list] = None,
     account_info: Optional[dict] = None,
+    profile_timeframes: Optional[dict[str, Optional[pd.DataFrame]]] = None,
 ) -> dict:
 
     logger.debug(f"Building market payload for {symbol}")
@@ -181,6 +182,13 @@ def build_market_payload(
     major_trend = build_major_trend_section(df_d1, smc_section, df_h1)
     open_position_state = get_open_position_state(symbol)
 
+    profile_tf_sections: dict[str, Any] = {}
+    if profile_timeframes:
+        for tf_name, tf_df in profile_timeframes.items():
+            profile_tf_sections[tf_name] = _build_timeframe_section(
+                tf_df, tf_name, include_orderflow=(tf_name == "M15")
+            )
+
     payload = {
         "symbol": symbol,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -201,6 +209,7 @@ def build_market_payload(
         "open_position_state": open_position_state,
         "account_context": account_context,
         "risk_config": risk_config,
+        "profile_timeframes": profile_tf_sections,
     }
 
     logger.debug(f"Market payload built for {symbol} — regime: {regime.get('regime')}")

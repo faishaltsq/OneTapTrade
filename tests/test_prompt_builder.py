@@ -37,7 +37,7 @@ def test_system_prompt_explains_high_profile_aggressive_entries():
         assert "H1 trend" in prompt
         assert "M5 is trigger" in prompt
         assert "M5 momentum" in prompt
-        assert "ignore spread" in prompt.lower()
+        assert "Do not invent price levels" in prompt
         assert "stop_loss" in prompt
         assert "take_profit_1" in prompt
         assert "D1 major trend" in prompt
@@ -255,3 +255,97 @@ def test_user_prompt_includes_strategy_mode_and_style_header():
     finally:
         settings.strategy_mode = original_mode
         settings.risk_profile = original_profile
+
+
+def test_user_prompt_compacts_large_market_payload_for_ai():
+    import json
+    from app.ai_engine.prompt_builder import build_user_prompt
+
+    giant_swings = [{"time": f"t{i}", "price": i, "extra": "x" * 20} for i in range(100)]
+    payload = {
+        "symbol": "XAUUSD.m",
+        "current_price": {"bid": 2000.0, "ask": 2000.5, "spread_points": 50},
+        "higher_timeframe": {
+            "timeframe": "D1",
+            "current_candle": {"close": 2000.0},
+            "indicators": {"rsi_14": 55, "ema_50": 1995, "ema_200": 1980},
+            "market_structure": {"trend": "BULLISH", "support_resistance": giant_swings},
+            "volume_profile": {"bins": giant_swings},
+        },
+        "primary_timeframe": {
+            "timeframe": "H1",
+            "current_candle": {"close": 2000.0},
+            "indicators": {"rsi_14": 60, "ema_50": 1998, "ema_200": 1985},
+            "market_structure": {"trend": "BULLISH", "support_resistance": giant_swings},
+            "volume_profile": {"bins": giant_swings},
+        },
+        "entry_timeframe": {
+            "timeframe": "M5",
+            "current_candle": {"close": 2000.0},
+            "indicators": {"rsi_14": 62, "ema_50": 2001, "ema_200": 1990},
+            "market_structure": {"trend": "BULLISH", "support_resistance": giant_swings},
+            "volume_profile": {"bins": giant_swings},
+            "orderflow": {"bias": "BUY_PRESSURE"},
+        },
+        "smc": {
+            "h1_swings": {"highs": giant_swings, "lows": giant_swings},
+            "m5_swings": {"highs": giant_swings, "lows": giant_swings},
+            "order_blocks": {"demand": giant_swings, "supply": giant_swings},
+            "fvg_zones": giant_swings,
+            "liquidity_levels": giant_swings,
+            "choch": {"m5": {"bullish_choch": giant_swings}},
+        },
+        "major_trend": {"bias": "D1_BULLISH", "allowed_directions": ["BUY"]},
+        "orderflow_proxy": {"delta_proxy": {"bias": "BUY_PRESSURE"}},
+        "account_context": {"balance": 1000, "open_positions_count": 0},
+        "risk_config": {"risk_profile": "HIGH"},
+    }
+
+    raw = json.dumps(payload, indent=2)
+    prompt = build_user_prompt(payload)
+
+    assert len(prompt) < len(raw) * 0.35
+    assert "XAUUSD.m" in prompt
+    assert "D1_BULLISH" in prompt
+    assert "BUY_PRESSURE" in prompt
+    assert "volume_profile" not in prompt
+    assert "support_resistance" not in prompt
+    assert prompt.count('"price"') < 80
+
+
+def test_smc_prompt_removes_aggressive_spread_ignore_rules():
+    from app.ai_engine.prompt_builder import build_system_prompt
+    from app.config import settings
+
+    original = settings.strategy_mode
+    try:
+        settings.strategy_mode = "SMC_AI"
+        prompt = build_system_prompt()
+
+        assert "SMC trading probability analyst" in prompt
+        assert "Do not invent price levels" in prompt
+        assert "Ignore spread completely" not in prompt
+        assert "Missing a trade is worse" not in prompt
+        assert "Be AGGRESSIVE" not in prompt
+    finally:
+        settings.strategy_mode = original
+
+
+def test_user_prompt_includes_smc_probability():
+    from app.ai_engine.prompt_builder import build_user_prompt
+    from app.config import settings
+
+    original = settings.strategy_mode
+    try:
+        settings.strategy_mode = "SMC_AI"
+        payload = {
+            "symbol": "XAUUSD",
+            "smc_probability": {"score": "BUY_SETUP", "confidence": 80},
+            "profile_timeframes": {"primary": "H1", "entry": "M5"},
+        }
+        prompt = build_user_prompt(payload)
+        assert "smc_probability" in prompt
+        assert "BUY_SETUP" in prompt
+        assert "profile_timeframes" in prompt
+    finally:
+        settings.strategy_mode = original

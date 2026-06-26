@@ -15,7 +15,9 @@ class Settings(BaseSettings):
 
     deepseek_api_key: Optional[str] = None
     deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-chat"
+    deepseek_model: str = "deepseek-v4-pro"
+    deepseek_fallback_model: str = "deepseek-v4-flash"
+    deepseek_timeout_seconds: int = 120
 
     telegram_bot_token: Optional[str] = None
     telegram_allowed_chat_id: Optional[str] = None
@@ -27,6 +29,9 @@ class Settings(BaseSettings):
     default_symbols: str = ""
     risk_profile: str = "MEDIUM"
     strategy_mode: str = "SMC_AI"
+    min_signal_probability: int = 70
+    send_no_trade_alert: bool = False
+    enable_ai_review: bool = True
     risk_per_trade_percent: float = 0.5
     max_daily_drawdown_percent: float = 2.0
     max_open_positions: int = 1

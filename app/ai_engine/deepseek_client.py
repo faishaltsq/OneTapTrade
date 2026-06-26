@@ -70,17 +70,23 @@ def get_ai_decision(market_payload: dict) -> AIDecisionResponse:
     client = OpenAI(
         base_url=settings.deepseek_base_url,
         api_key=settings.deepseek_api_key,
-        timeout=45,
+        timeout=settings.deepseek_timeout_seconds,
+        max_retries=0,
     )
 
     symbol = market_payload.get("symbol", settings.default_symbol)
     system_prompt = build_system_prompt(symbol=symbol)
     user_prompt = build_user_prompt(market_payload)
 
-    for attempt in range(3):
+    models = [settings.deepseek_model]
+    if settings.deepseek_fallback_model and settings.deepseek_fallback_model not in models:
+        models.append(settings.deepseek_fallback_model)
+
+    response = None
+    for attempt, model in enumerate(models, 1):
         try:
             response = client.chat.completions.create(
-                model=settings.deepseek_model,
+                model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
@@ -88,11 +94,14 @@ def get_ai_decision(market_payload: dict) -> AIDecisionResponse:
                 temperature=0.2,
                 max_tokens=4000,
             )
+            if model != settings.deepseek_model:
+                logger.warning(f"DeepSeek fallback model succeeded: {model}")
+            break
         except Exception as e:
-            logger.error(f"DeepSeek API call attempt {attempt + 1} failed: {e}")
-            if attempt < 2:
-                continue
-            return _default_hold()
+            logger.error(f"DeepSeek API call attempt {attempt} failed for {model}: {e}")
+
+    if response is None:
+        return _default_hold()
 
     usage = getattr(response, "usage", None)
     if usage:

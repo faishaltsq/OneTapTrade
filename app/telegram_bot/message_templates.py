@@ -285,6 +285,14 @@ def _fmt_num(value) -> str:
         return _escape_html(str(value))
 
 
+def _pip_size_for_symbol(symbol: str) -> float:
+    letters = "".join(ch for ch in str(symbol).upper() if ch.isalpha())
+    currencies = {"AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD"}
+    if len(letters) >= 6 and letters[:3] in currencies and letters[3:6] in currencies:
+        return 0.01 if letters[3:6] == "JPY" else 0.0001
+    return 1.0
+
+
 def _fmt_alert_num(value) -> str:
     if value is None:
         return "Menunggu data"
@@ -470,9 +478,78 @@ def _format_trade_plan(decision) -> list[str]:
     ]
 
 
+def _first_matching_reason(score: dict, factor: str) -> str | None:
+    for adjustment in score.get("adjustments") or []:
+        if adjustment.get("factor") == factor:
+            return adjustment.get("reason")
+    return None
+
+
+def _format_smc_probability_block(symbol: str, payload: dict, risk_result: dict) -> list[str]:
+    score = (payload or {}).get("smc_probability") or {}
+    if not score:
+        return []
+    model = score.get("timeframe_model") or {}
+    confluence = score.get("main_confluence") or []
+    weaknesses = score.get("weaknesses") or []
+    risk_notes = score.get("risk_notes") or []
+    quality = str(score.get("setup_quality") or "low").title()
+    decision = score.get("pre_ai_decision") or "WAIT"
+    entry_note = score.get("entry_sl_tp_note") or "manual confirmation required"
+    invalidation = score.get("invalidation") or "manual confirmation required"
+    price = (payload or {}).get("current_price") or {}
+    execution_tfs = "/".join(model.get("execution_timeframes") or []) or "N/A"
+
+    emoji = "\U0001f7e2" if decision == "BUY_SETUP" else "\U0001f534" if decision == "SELL_SETUP" else "\u26aa"
+
+    lines = [
+        f"{emoji} <b>{_escape_html(symbol)} \u2014 SMC ANALYSIS</b>",
+        "",
+        "<b>Bias:</b>",
+        f"Direction: {_escape_html(str(score.get('bias') or 'neutral'))}",
+        f"Execution TF: {_escape_html(execution_tfs)}",
+        "",
+        "<b>SMC Event:</b>",
+        f"Decision: {_escape_html(decision)}",
+        f"Premium/Discount: {_escape_html(_first_matching_reason(score, 'premium_discount') or 'manual confirmation required')}",
+        "",
+        "<b>Confluence:</b>",
+    ]
+    lines.extend([f"\u2705 {_escape_html(item)}" for item in confluence[:4]])
+    lines.extend([f"\u26a0\ufe0f {_escape_html(item)}" for item in weaknesses[:4]])
+    lines.extend([
+        "",
+        "<b>Probability:</b>",
+        f"Score: {int(score.get('final_score') or 0)}%",
+        f"Quality: {_escape_html(quality)}",
+        "",
+        "<b>Decision:</b>",
+        _escape_html(decision),
+        "",
+        "<b>Risk:</b>",
+        f"Spread: {_fmt_num(price.get('spread_points'))} pts",
+        f"RR: {_escape_html(str(((payload or {}).get('entry_plan_context') or {}).get('risk_reward_to_tp1', 'manual confirmation required')))}",
+        "",
+        "<b>Entry/SL/TP:</b>",
+        _escape_html(entry_note).capitalize(),
+        "",
+        "<b>Invalidation:</b>",
+        _escape_html(invalidation),
+    ])
+    if risk_notes:
+        lines.append("")
+        lines.append("<b>Notes:</b> " + _escape_html("; ".join(str(n) for n in risk_notes[:3])))
+    return lines
+
+
 def format_market_trend_alert(decision, symbol: str, market_payload: dict | None = None, risk_result: dict | None = None) -> str:
     payload = market_payload or {}
     risk_result = risk_result or {}
+    smc_probability_lines = _format_smc_probability_block(symbol, payload, risk_result)
+    if smc_probability_lines:
+        semantic = (payload.get("smc_probability") or {}).get("pre_ai_decision", "")
+        if semantic not in {"BUY_SETUP", "SELL_SETUP"}:
+            return "\n".join(smc_probability_lines)
     decision_str = _enum_value(getattr(decision, "decision", "HOLD"))
     confidence = getattr(decision, "confidence", 0.0) or 0.0
     reason = getattr(decision, "main_reason", "") or getattr(decision, "final_comment", "") or ""
@@ -535,6 +612,7 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
         setup_label = f"{decision_str} SETUP"
         entry_label = f"{decision_str} {entry_type or 'MARKET'}"
         aggressive = "Aggressive Entry" if m5_trend == "ranging" else "Confirmed Entry"
+        pip_size = _pip_size_for_symbol(symbol)
 
         lines = [
             f"{d_emoji} <b>{_escape_html(symbol)} \u2014 {setup_label}</b>",
@@ -563,11 +641,13 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
                 risk_m = abs(me - sl)
                 reward_m = abs(tp - me)
                 rr_m = reward_m / risk_m if risk_m > 0 else 0
-                risk_label = "\U0001f534 High risk" if risk_m > 50 else ("\U0001f7e1 Medium risk" if risk_m > 20 else "\U0001f7e2 Low risk")
+                risk_m_pips = risk_m / pip_size
+                reward_m_pips = reward_m / pip_size
+                risk_label = "\U0001f534 High risk" if risk_m_pips > 50 else ("\U0001f7e1 Medium risk" if risk_m_pips > 20 else "\U0001f7e2 Low risk")
                 lines.append(f"\U0001f449 <b>Option A: MARKET</b> ({risk_label})")
                 lines.append(f"   Entry: <code>{_fmt_num(market_entry)}</code> (now)")
                 lines.append(f"   SL: <code>{_fmt_num(stop_loss)}</code> | TP: <code>{_fmt_num(tp1)}</code>")
-                lines.append(f"   Risk: {risk_m:.2f} pips | Reward: {reward_m:.2f} pips | R:R {rr_m:.1f}")
+                lines.append(f"   Risk: {risk_m_pips:.2f} pips | Reward: {reward_m_pips:.2f} pips | R:R {rr_m:.1f}")
                 lines.append(f"   \u26a0 Immediate fill, price may slip")
             except (ValueError, TypeError):
                 pass
@@ -580,12 +660,14 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
                 risk_l = abs(le - sl)
                 reward_l = abs(tp - le)
                 rr_l = reward_l / risk_l if risk_l > 0 else 0
+                risk_l_pips = risk_l / pip_size
+                reward_l_pips = reward_l / pip_size
                 prob_label = "\u2705 High probability" if rr_l >= 2.0 else ("\u26a0\ufe0f Medium probability" if rr_l >= 1.2 else "\u274c Low probability")
                 lines.append("")
                 lines.append(f"\U0001f449 <b>Option B: LIMIT</b> ({prob_label})")
                 lines.append(f"   Entry: <code>{_fmt_num(limit_entry)}</code> (AI preferred)")
                 lines.append(f"   SL: <code>{_fmt_num(stop_loss)}</code> | TP: <code>{_fmt_num(tp1)}</code>")
-                lines.append(f"   Risk: {risk_l:.2f} pips | Reward: {reward_l:.2f} pips | R:R {rr_l:.1f}")
+                lines.append(f"   Risk: {risk_l_pips:.2f} pips | Reward: {reward_l_pips:.2f} pips | R:R {rr_l:.1f}")
                 lines.append(f"   \u2705 Better entry price, may not fill")
             except (ValueError, TypeError):
                 pass
@@ -632,6 +714,10 @@ def format_market_trend_alert(decision, symbol: str, market_payload: dict | None
         if reason:
             lines.append("")
             lines.append(f"\U0001f4ac <i>{_escape_html(reason[:300])}</i>")
+
+    if smc_probability_lines and decision_str in ("BUY", "SELL"):
+        lines.append("")
+        lines.extend(smc_probability_lines[1:])
 
     lines.append("")
     lines.append(f"\U0001f4ca Bid: {_fmt_num(bid)} | Ask: {_fmt_num(ask)} | Spread: {spread_pts} pts")

@@ -11,6 +11,15 @@ def test_strategy_mode_default_is_smc_ai(monkeypatch):
     assert s.strategy_mode == "SMC_AI"
 
 
+def test_smc_probability_config_defaults():
+    from app.config import Settings
+
+    settings = Settings(_env_file=None)
+    assert settings.min_signal_probability == 70
+    assert settings.send_no_trade_alert is False
+    assert settings.enable_ai_review is True
+
+
 def test_risk_profile_config_has_style_and_timeframe_fields():
     from app.config import settings
 

@@ -9,6 +9,7 @@ from app.telegram_bot.bot import (
     notify_trade_rejected,
     _pending_decisions,
     _decision_symbols,
+    _decision_payloads,
     _trading_loop_ref,
 )
 from app.telegram_bot.commands import get_command_handlers
@@ -41,5 +42,6 @@ __all__ = [
     "format_decision_for_telegram",
     "_pending_decisions",
     "_decision_symbols",
+    "_decision_payloads",
     "_trading_loop_ref",
 ]

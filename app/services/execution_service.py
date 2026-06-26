@@ -14,6 +14,7 @@ def execute_trade(
     current_bid: float,
     current_ask: float,
     market_payload: dict | None = None,
+    ai_decision_id: str | None = None,
 ) -> dict:
     sym = risk_result.get("symbol", settings.default_symbol)
 
@@ -369,6 +370,8 @@ def execute_trade(
             "status": "OPEN",
             "opened_at": datetime.now(timezone.utc).isoformat(),
         }
+        if ai_decision_id:
+            trade_data["ai_decision_id"] = ai_decision_id
         trade_row = save_trade(trade_data)
         if trade_row:
             logger.info(f"Trade saved to DB: {trade_id}")

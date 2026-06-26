@@ -1,6 +1,25 @@
 from types import SimpleNamespace
+import sys
 
 import pytest
+
+
+def test_closed_trade_result_uses_order_position_deals(monkeypatch):
+    from app.services.trading_loop import _get_closed_trade_result
+
+    fake_mt5 = SimpleNamespace(
+        DEAL_ENTRY_OUT=1,
+        history_orders_get=lambda ticket: [SimpleNamespace(position_id=456)],
+        history_deals_get=lambda **kwargs: [
+            SimpleNamespace(entry=0, price=1.1000, profit=0.0, swap=0.0, commission=0.0),
+            SimpleNamespace(entry=1, price=1.0950, profit=-12.5, swap=-0.2, commission=-0.1),
+        ] if kwargs == {"position": 456} else None,
+    )
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake_mt5)
+
+    result = _get_closed_trade_result({"mt5_ticket": 123, "symbol": "EURUSD.c"})
+
+    assert result == {"close_price": 1.0950, "profit": -12.8}
 
 
 @pytest.mark.asyncio
@@ -43,6 +62,46 @@ async def test_approve_callback_uses_global_open_positions_for_max_entry(monkeyp
     assert captured_context["open_positions_count"] == 1
     assert captured_context["open_positions_count_symbol"] == 4
     assert captured_context["has_open_position"] is True
+
+
+@pytest.mark.asyncio
+async def test_auto_demo_skips_execution_when_signal_send_fails(monkeypatch):
+    from app.config import settings
+    from app.services.trading_loop import TradingLoop
+
+    original_mode = settings.bot_mode
+    try:
+        settings.bot_mode = "AUTO_DEMO"
+        loop = TradingLoop()
+        loop._status_service.set_mode("AUTO_DEMO")
+        decision = SimpleNamespace(decision=SimpleNamespace(value="BUY"))
+        signal_result = {
+            "ai_decision": decision,
+            "risk_result": {"approved": True, "symbol": "BTCUSD.m"},
+            "decision_id": "decision-1",
+            "market_payload": {},
+        }
+        executed = False
+
+        monkeypatch.setattr("app.services.signal_service.generate_signal", lambda symbol, tv_data=None: signal_result)
+
+        async def fake_send_trade_signal(*args, **kwargs):
+            return False
+
+        async def fake_do_execute(*args, **kwargs):
+            nonlocal executed
+            executed = True
+            return {"success": True}
+
+        monkeypatch.setattr("app.telegram_bot.bot.send_trade_signal", fake_send_trade_signal)
+        monkeypatch.setattr(loop, "_do_execute", fake_do_execute)
+
+        result = await loop._run_symbol("BTCUSD.m", force=True)
+
+        assert result == {"success": False, "error": "Signal notification failed; execution skipped"}
+        assert executed is False
+    finally:
+        settings.bot_mode = original_mode
 
 
 @pytest.mark.asyncio

@@ -55,6 +55,11 @@ def generate_signal(symbol: Optional[str] = None, tv_data: dict = None) -> dict:
         df_h4 = get_candles(sym, timeframe="H4", count=100)
         df_h1 = get_candles(sym, timeframe="H1", count=100)
         df_m15 = get_candles(sym, timeframe="M5", count=100)
+        df_m15_profile = None
+        try:
+            df_m15_profile = get_candles(sym, timeframe="M15", count=100)
+        except Exception as e:
+            logger.debug(f"Optional M15 profile candles unavailable for {sym}: {e}")
         logger.info(
             f"Step 6: Fetched candles — D1: {len(df_d1)}, H4: {len(df_h4)}, H1: {len(df_h1)}, M5: {len(df_m15)}"
         )
@@ -112,8 +117,41 @@ def generate_signal(symbol: Optional[str] = None, tv_data: dict = None) -> dict:
             tick_data=None,
             depth_data=depth_data,
             account_info=account_context,
+            profile_timeframes={"M15": df_m15_profile},
         )
         market_payload.setdefault("risk_config", {})["point"] = symbol_info.get("point", 0.01)
+
+        entry_plan_context = market_payload.setdefault("entry_plan_context", {})
+        entry_plan_context.setdefault("risk_reward_to_tp1", None)
+        entry_plan_context.setdefault("entry_available", False)
+        entry_plan_context.setdefault("sl_available", False)
+        entry_plan_context.setdefault("tp_available", False)
+
+        from app.analysis.smc_probability import build_rule_based_hold_decision, score_smc_setup
+
+        try:
+            smc_probability = score_smc_setup(market_payload, settings.risk_profile)
+            market_payload["smc_probability"] = smc_probability
+            logger.info(
+                f"SMC deterministic score [{sym}]: "
+                f"decision={smc_probability.get('pre_ai_decision')} "
+                f"score={smc_probability.get('final_score')} "
+                f"quality={smc_probability.get('setup_quality')}"
+            )
+        except Exception as e:
+            logger.error(f"SMC probability scoring failed for {sym}: {e}")
+            market_payload["smc_probability"] = {
+                "pre_ai_decision": "NO_TRADE",
+                "final_score": 0,
+                "forced_no_trade": True,
+                "risk_notes": ["SMC scoring failed"],
+                "main_confluence": [],
+                "weaknesses": ["SMC scoring engine error"],
+                "entry_sl_tp_note": "manual confirmation required",
+                "invalidation": "manual confirmation required",
+                "ai_review_used": False,
+                "ai_unavailable": False,
+            }
 
         if tv_data:
             from app.ai_engine.tv_data_adapter import format_tv_context
@@ -265,7 +303,16 @@ def generate_signal(symbol: Optional[str] = None, tv_data: dict = None) -> dict:
         from app.ai_engine.deepseek_client import get_ai_decision, validate_decision
 
         logger.info("Step 11: Requesting AI decision...")
-        ai_decision = get_ai_decision(market_payload)
+        if settings.enable_ai_review:
+            ai_decision = get_ai_decision(market_payload)
+            if getattr(ai_decision, "final_comment", "") == "Decision engine error — defaulting to HOLD":
+                from app.analysis.smc_probability import mark_ai_unavailable
+                market_payload["smc_probability"] = mark_ai_unavailable(market_payload.get("smc_probability", {}))
+                ai_decision = build_rule_based_hold_decision(
+                    market_payload["smc_probability"], market_payload
+                )
+        else:
+            ai_decision = build_rule_based_hold_decision(market_payload.get("smc_probability", {}), market_payload)
         logger.info("Step 12: Validating AI decision...")
         ai_decision = validate_decision(ai_decision, market_payload=market_payload)
         logger.info(
@@ -308,6 +355,7 @@ def generate_signal(symbol: Optional[str] = None, tv_data: dict = None) -> dict:
             "daily_drawdown_percent": daily_drawdown or 0.0,
             "mode": settings.bot_mode,
             "point": symbol_info.get("point", 0.01) if symbol_info else 0.01,
+            "smc_probability": market_payload.get("smc_probability", {}),
             "major_trend": market_payload.get("major_trend", {}),
             "open_position_state": market_payload.get("open_position_state", {}),
         }

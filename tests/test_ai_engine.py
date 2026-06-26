@@ -276,3 +276,55 @@ def test_deepseek_normalizes_sell_limit_entry_type():
         assert decision.entry_plan.entry_type == EntryType.LIMIT
     finally:
         settings.deepseek_api_key = original_key
+
+
+def test_deepseek_client_disables_sdk_retries():
+    from unittest.mock import MagicMock, patch
+    from app.config import settings
+    from app.ai_engine.deepseek_client import get_ai_decision
+
+    original_key = settings.deepseek_api_key
+    try:
+        settings.deepseek_api_key = "test-key"
+        fake_response = MagicMock()
+        fake_response.choices = [MagicMock()]
+        fake_response.choices[0].message.content = '{"decision":"HOLD","confidence":0.0,"confidence_label":"LOW","market_regime":"UNCLEAR","higher_timeframe_bias":"UNCLEAR","entry_timeframe_bias":"UNCLEAR","main_reason":"mock","entry_plan":{"entry_type":"NONE"},"execution_permission":{"ai_allows_execution":false,"reason":"hold"},"risk_notes":{"main_risk":"","invalidation_condition":"","conditions_to_avoid_trade":[]},"final_comment":""}'
+        fake_response.usage = None
+
+        with patch("app.ai_engine.deepseek_client.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = fake_response
+            mock_openai.return_value = mock_client
+            get_ai_decision({"symbol": "XAUUSD"})
+
+        assert mock_openai.call_args.kwargs["max_retries"] == 0
+    finally:
+        settings.deepseek_api_key = original_key
+
+
+def test_deepseek_falls_back_to_flash_after_primary_timeout():
+    from unittest.mock import MagicMock, patch
+    from app.config import settings
+    from app.ai_engine.deepseek_client import get_ai_decision
+
+    original_key = settings.deepseek_api_key
+    original_model = settings.deepseek_model
+    try:
+        settings.deepseek_api_key = "test-key"
+        settings.deepseek_model = "deepseek-v4-pro"
+        fake_response = MagicMock()
+        fake_response.choices = [MagicMock()]
+        fake_response.choices[0].message.content = '{"decision":"HOLD","confidence":0.0,"confidence_label":"LOW","market_regime":"UNCLEAR","higher_timeframe_bias":"UNCLEAR","entry_timeframe_bias":"UNCLEAR","main_reason":"mock","entry_plan":{"entry_type":"NONE"},"execution_permission":{"ai_allows_execution":false,"reason":"hold"},"risk_notes":{"main_risk":"","invalidation_condition":"","conditions_to_avoid_trade":[]},"final_comment":""}'
+        fake_response.usage = None
+
+        with patch("app.ai_engine.deepseek_client.OpenAI") as mock_openai:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.side_effect = [TimeoutError("Request timed out."), fake_response]
+            mock_openai.return_value = mock_client
+            get_ai_decision({"symbol": "XAUUSD"})
+
+        models = [call.kwargs["model"] for call in mock_client.chat.completions.create.call_args_list]
+        assert models == ["deepseek-v4-pro", "deepseek-v4-flash"]
+    finally:
+        settings.deepseek_api_key = original_key
+        settings.deepseek_model = original_model

@@ -709,3 +709,51 @@ class TestDirectionLockAndMajorTrend:
 
         assert result["approved"] is True
         assert result["checks"]["sl_range_ok"] is True
+
+    @patch("app.risk.risk_manager.settings")
+    @patch("app.risk.trade_validator.validate_trade_params")
+    def test_risk_manager_blocks_no_trade_probability(self, mock_validate, mock_settings):
+        from app.risk.risk_manager import evaluate_decision
+
+        self._settings(mock_settings)
+        mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
+
+        decision = _buy_decision()
+        result = evaluate_decision(decision, {"symbol": "EURUSD.m", "current_bid": 1.1, "current_ask": 1.1002, "smc_probability": {"pre_ai_decision": "NO_TRADE", "final_score": 20}})
+
+        assert result["approved"] is False
+        assert "NO_TRADE" in result["reason"]
+
+    @patch("app.risk.risk_manager.settings")
+    @patch("app.risk.trade_validator.validate_trade_params")
+    def test_risk_manager_blocks_below_min_signal_probability(self, mock_validate, mock_settings):
+        from app.risk.risk_manager import evaluate_decision
+
+        mock_settings.effective_min_confidence = 0.40
+        mock_settings.max_open_positions = 99
+        mock_settings.max_positions_per_symbol = 5
+        mock_settings.max_daily_drawdown_percent = 2.0
+        mock_settings.live_trading_enabled = False
+        mock_settings.min_signal_probability = 70
+        mock_validate.return_value = {"valid": True, "errors": [], "warnings": []}
+
+        decision = _buy_decision()
+        result = evaluate_decision(decision, {"symbol": "EURUSD.m", "current_bid": 1.1, "current_ask": 1.1002, "smc_probability": {"pre_ai_decision": "BUY_SETUP", "final_score": 60}})
+
+        assert result["approved"] is False
+        assert "below minimum signal probability" in result["reason"]
+
+
+def _buy_decision():
+    from app.ai_engine.schemas import AIDecisionResponse, ConfidenceLabel, Decision, EntryPlan, EntryType, ExecutionPermission, MarketRegime, TimeframeBias
+
+    return AIDecisionResponse(
+        decision=Decision.BUY,
+        confidence=0.9,
+        confidence_label=ConfidenceLabel.HIGH,
+        market_regime=MarketRegime.TRENDING_UP,
+        higher_timeframe_bias=TimeframeBias.BULLISH,
+        entry_timeframe_bias=TimeframeBias.BULLISH,
+        entry_plan=EntryPlan(entry_type=EntryType.LIMIT, preferred_entry_price=1.1, stop_loss=1.095, take_profit_1=1.11, risk_reward_to_tp1=2.0),
+        execution_permission=ExecutionPermission(ai_allows_execution=True, reason="test"),
+    )

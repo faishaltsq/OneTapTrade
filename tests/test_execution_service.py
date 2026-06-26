@@ -75,6 +75,49 @@ def test_market_sell_uses_current_bid_as_order_price(monkeypatch):
     assert captured["price"] == 113.031
 
 
+def test_execute_trade_persists_ai_decision_id(monkeypatch):
+    from app.services.execution_service import execute_trade
+
+    saved = {}
+    decision = SimpleNamespace(
+        decision="SELL",
+        entry_plan=SimpleNamespace(
+            entry_type=SimpleNamespace(value="MARKET"),
+            preferred_entry_price=113.03,
+            stop_loss=113.15,
+            take_profit_1=112.81,
+        ),
+    )
+
+    monkeypatch.setattr(
+        "app.risk.position_sizing.calculate_lot_size",
+        lambda account_balance, sl_points, symbol_info, **kwargs: {"is_valid": True, "lot": 0.01},
+    )
+    monkeypatch.setattr("app.mt5_connector.execution.build_order_request", lambda **kwargs: {"price": kwargs["price"]})
+    monkeypatch.setattr("app.mt5_connector.execution.check_order", lambda request: {"retcode": 0, "comment": "Done"})
+    monkeypatch.setattr("app.mt5_connector.execution.send_order", lambda request: {"retcode": 10009, "order": 12345, "price": request["price"]})
+
+    def fake_save_trade(trade_data):
+        saved.update(trade_data)
+        return {"id": trade_data["id"]}
+
+    monkeypatch.setattr("app.database.repositories.save_trade", fake_save_trade)
+    monkeypatch.setattr("app.database.repositories.log_bot_event", lambda **kwargs: None)
+
+    result = execute_trade(
+        decision,
+        {"symbol": "USDJPY.c"},
+        {"point": 0.001, "digits": 3, "trade_stops_level": 0},
+        1000.0,
+        current_bid=113.031,
+        current_ask=113.051,
+        ai_decision_id="decision-123",
+    )
+
+    assert result["success"] is True
+    assert saved["ai_decision_id"] == "decision-123"
+
+
 def test_valid_smc_demand_zone_converts_buy_to_limit(monkeypatch):
     from app.services.execution_service import execute_trade
 
