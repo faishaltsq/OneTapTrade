@@ -24,6 +24,18 @@ def _map_tv_symbol(mt5_symbol: str) -> str:
     return TV_SYMBOL_MAP.get(symbol, symbol)
 
 
+_TF_MAP = {
+    "D1": "D", "D": "D",
+    "H4": "240", "H1": "60", "H": "60",
+    "M15": "15", "M5": "5", "M1": "1",
+    "W1": "W", "W": "W",
+}
+
+
+def _map_tf(tf: str) -> str:
+    return _TF_MAP.get(tf.upper(), tf)
+
+
 async def draw_and_capture_multi_tf(
     mt5_symbol: str,
     decision: str,
@@ -51,10 +63,11 @@ async def draw_and_capture_multi_tf(
     results = []
 
     for tf in timeframes:
+        tv_tf = _map_tf(tf)
         try:
             await tools.set_symbol(tv_symbol)
             await asyncio.sleep(2.0)
-            await tools.set_timeframe(tf)
+            await tools.set_timeframe(tv_tf)
             await asyncio.sleep(3.0)
         except Exception:
             pass
