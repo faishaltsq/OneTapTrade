@@ -1,5 +1,55 @@
 from types import SimpleNamespace
 
+import pandas as pd
+
+
+def _tv_df():
+    return pd.DataFrame(
+        [
+            {"time": pd.Timestamp("2026-01-01"), "open": 1.0, "high": 1.2, "low": 0.9, "close": 1.1, "tick_volume": 100},
+            {"time": pd.Timestamp("2026-01-02"), "open": 1.1, "high": 1.3, "low": 1.0, "close": 1.2, "tick_volume": 120},
+        ]
+    )
+
+
+def test_generate_signal_uses_tv_first_without_mt5_connection(monkeypatch):
+    from app.config import settings
+    from app.services import signal_service
+
+    monkeypatch.setattr(settings, "tv_first_mode", True)
+    monkeypatch.setattr("app.tv_connector.is_tv_available", lambda: True)
+    monkeypatch.setattr("app.tv_connector.get_tv_tools", lambda: object())
+    monkeypatch.setattr("app.mt5_connector.connection.ensure_mt5_connected", lambda: False)
+
+    async def fake_fetch_all_tv_data(tools, symbol, timeframes):
+        return {
+            "ohlcv": {"D1": _tv_df(), "H4": _tv_df(), "H1": _tv_df(), "M15": _tv_df(), "M5": _tv_df()},
+            "quote": {"bid": 1.1, "ask": 1.1002, "mid": 1.1001, "spread_points": 0},
+            "indicators": {"rsi_14": 55.0, "ema_50": 1.099, "ema_200": 1.095, "atr_14": 0.002},
+            "smc": {"order_blocks": {"demand": [], "supply": []}, "fvg_zones": [], "liquidity_levels": [], "choch": {}},
+        }
+
+    monkeypatch.setattr("app.tv_connector.tv_data_fetcher.fetch_all_tv_data", fake_fetch_all_tv_data)
+    monkeypatch.setattr("app.mt5_connector.account.get_balance", lambda: None)
+    monkeypatch.setattr("app.mt5_connector.account.get_equity", lambda: None)
+    monkeypatch.setattr("app.mt5_connector.account.get_daily_drawdown_percent", lambda: 0.0)
+    monkeypatch.setattr("app.mt5_connector.positions.get_open_positions_count", lambda symbol=None: 0)
+    monkeypatch.setattr("app.mt5_connector.orders.get_pending_orders_count", lambda symbol=None: 0)
+    monkeypatch.setattr("app.database.repositories.save_market_snapshot", lambda snapshot: {"id": "snap-tv"})
+    monkeypatch.setattr("app.analysis.noise_filter.evaluate_noise_filter", lambda *args: {"passed": True, "blocked_by": [], "hold_reason": ""})
+    monkeypatch.setattr("app.ai_engine.deepseek_client.get_ai_decision", lambda payload: _hold_decision())
+    monkeypatch.setattr("app.ai_engine.deepseek_client.validate_decision", lambda decision, market_payload=None: decision)
+    monkeypatch.setattr("app.database.repositories.save_ai_decision", lambda row: {"id": "decision-tv"})
+    monkeypatch.setattr("app.database.repositories.save_risk_check", lambda **kwargs: {})
+    monkeypatch.setattr("app.risk.risk_manager.evaluate_decision", lambda decision, context: {"approved": False, "reason": "test", "checks": {}})
+
+    result = signal_service.generate_signal("EURUSD")
+
+    assert "error" not in result
+    assert result["market_payload"]["data_source"] == "tradingview"
+    assert result["market_payload"]["tv_indicators"]["rsi_14"] == 55.0
+    assert result["snapshot_id"] == "snap-tv"
+
 
 def test_generate_signal_uses_global_open_positions_for_max_entry(monkeypatch):
     from app.services.signal_service import generate_signal

@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     auto_signal_enabled: bool = False
 
     tv_enabled: bool = True
+    tv_first_mode: bool = True
     tv_launch_on_startup: bool = True
     tv_debug_port: int = 9222
     tv_health_check_interval: int = 30

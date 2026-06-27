@@ -20,6 +20,13 @@ def test_smc_probability_config_defaults():
     assert settings.enable_ai_review is True
 
 
+def test_tv_first_mode_defaults_enabled():
+    from app.config import Settings
+
+    settings = Settings(_env_file=None)
+    assert settings.tv_first_mode is True
+
+
 def test_risk_profile_config_has_style_and_timeframe_fields():
     from app.config import settings
 

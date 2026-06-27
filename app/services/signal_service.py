@@ -9,17 +9,39 @@ def generate_signal(symbol: Optional[str] = None, tv_data: dict = None) -> dict:
 
     logger.info(f"Generating signal for {sym}...")
 
-    try:
-        from app.mt5_connector.connection import ensure_mt5_connected
+    tv_data_primary = None
+    use_tv_primary = False
+    if settings.tv_first_mode:
+        try:
+            from app.tv_connector import get_tv_tools, is_tv_available
 
-        if not ensure_mt5_connected():
-            logger.error("MT5 not connected, cannot generate signal")
-            return {"error": "MT5 not connected"}
+            if is_tv_available():
+                tools = get_tv_tools()
+                if tools:
+                    from app.tv_connector.tv_data_fetcher import fetch_all_tv_data
 
-        logger.info("Step 1: MT5 connected")
-    except Exception as e:
-        logger.error(f"MT5 connection check failed: {e}")
-        return {"error": f"MT5 connection check failed: {e}"}
+                    tv_data_primary = _run_async(fetch_all_tv_data(tools, sym, ["D1", "H4", "H1", "M15", "M5"]))
+                    d1_df = (tv_data_primary.get("ohlcv") or {}).get("D1")
+                    use_tv_primary = d1_df is not None and len(d1_df) > 0
+                    if use_tv_primary:
+                        logger.info(f"TV-first data available for {sym}; MT5 connection not required for analysis")
+        except Exception as e:
+            logger.warning(f"TV-first data unavailable for {sym}, falling back to MT5: {e}")
+            tv_data_primary = None
+            use_tv_primary = False
+
+    if not use_tv_primary:
+        try:
+            from app.mt5_connector.connection import ensure_mt5_connected
+
+            if not ensure_mt5_connected():
+                logger.error("MT5 not connected, cannot generate signal")
+                return {"error": "MT5 not connected"}
+
+            logger.info("Step 1: MT5 connected")
+        except Exception as e:
+            logger.error(f"MT5 connection check failed: {e}")
+            return {"error": f"MT5 connection check failed: {e}"}
 
     try:
         from app.mt5_connector.market_data import (
@@ -31,45 +53,62 @@ def generate_signal(symbol: Optional[str] = None, tv_data: dict = None) -> dict:
             select_symbol,
         )
 
-        if not select_symbol(sym):
-            return {"error": f"Failed to select symbol: {sym} (may be closed or invalid)"}
-        logger.info(f"Step 2: Symbol selected: {sym}")
+        if use_tv_primary:
+            ohlcv = tv_data_primary.get("ohlcv") or {}
+            quote = tv_data_primary.get("quote") or {}
+            symbol_info = {"point": 0.01}
+            bid = quote.get("bid", 0.0)
+            ask = quote.get("ask", 0.0)
+            spread_points = int(quote.get("spread_points") or 0)
+            df_d1 = ohlcv.get("D1")
+            df_h4 = ohlcv.get("H4")
+            df_h1 = ohlcv.get("H1")
+            df_m15 = ohlcv.get("M5")
+            df_m15_profile = ohlcv.get("M15")
+            depth_data = None
+            logger.info(
+                f"Step 1: TV candles — D1: {len(df_d1)}, H4: {len(df_h4)}, H1: {len(df_h1)}, M5: {len(df_m15)}"
+            )
+        else:
+            if not select_symbol(sym):
+                return {"error": f"Failed to select symbol: {sym} (may be closed or invalid)"}
+            logger.info(f"Step 2: Symbol selected: {sym}")
 
-        symbol_info = get_symbol_info(sym)
-        if symbol_info is None:
-            return {"error": f"Failed to get symbol info for {sym}"}
-        logger.info(f"Step 3: Got symbol info for {sym}")
+            symbol_info = get_symbol_info(sym)
+            if symbol_info is None:
+                return {"error": f"Failed to get symbol info for {sym}"}
+            logger.info(f"Step 3: Got symbol info for {sym}")
 
-        tick = get_latest_tick(sym)
-        if tick is None:
-            return {"error": f"Failed to get tick data for {sym}"}
-        bid = tick.get("bid", 0.0)
-        ask = tick.get("ask", 0.0)
-        logger.info(f"Step 4: Got latest tick — bid={bid}, ask={ask}")
+            tick = get_latest_tick(sym)
+            if tick is None:
+                return {"error": f"Failed to get tick data for {sym}"}
+            bid = tick.get("bid", 0.0)
+            ask = tick.get("ask", 0.0)
+            logger.info(f"Step 4: Got latest tick — bid={bid}, ask={ask}")
 
-        spread = get_spread(sym)
-        spread_points = int(spread) if spread is not None else 0
-        logger.info(f"Step 5: Spread = {spread_points} pts")
+            spread = get_spread(sym)
+            spread_points = int(spread) if spread is not None else 0
+            logger.info(f"Step 5: Spread = {spread_points} pts")
 
-        df_d1 = get_candles(sym, timeframe="D1", count=50)
-        df_h4 = get_candles(sym, timeframe="H4", count=100)
-        df_h1 = get_candles(sym, timeframe="H1", count=100)
-        df_m15 = get_candles(sym, timeframe="M5", count=100)
-        df_m15_profile = None
-        try:
-            df_m15_profile = get_candles(sym, timeframe="M15", count=100)
-        except Exception as e:
-            logger.debug(f"Optional M15 profile candles unavailable for {sym}: {e}")
-        logger.info(
-            f"Step 6: Fetched candles — D1: {len(df_d1)}, H4: {len(df_h4)}, H1: {len(df_h1)}, M5: {len(df_m15)}"
-        )
+            df_d1 = get_candles(sym, timeframe="D1", count=50)
+            df_h4 = get_candles(sym, timeframe="H4", count=100)
+            df_h1 = get_candles(sym, timeframe="H1", count=100)
+            df_m15 = get_candles(sym, timeframe="M5", count=100)
+            df_m15_profile = None
+            try:
+                df_m15_profile = get_candles(sym, timeframe="M15", count=100)
+            except Exception as e:
+                logger.debug(f"Optional M15 profile candles unavailable for {sym}: {e}")
+            logger.info(
+                f"Step 6: Fetched candles — D1: {len(df_d1)}, H4: {len(df_h4)}, H1: {len(df_h1)}, M5: {len(df_m15)}"
+            )
 
-        depth_data = None
-        try:
-            depth_data = get_market_depth(sym)
-        except Exception as e:
-            logger.debug(f"Market depth unavailable: {e}")
-        logger.info(f"Step 7: Market depth {'available' if depth_data else 'unavailable'}")
+            depth_data = None
+            try:
+                depth_data = get_market_depth(sym)
+            except Exception as e:
+                logger.debug(f"Market depth unavailable: {e}")
+            logger.info(f"Step 7: Market depth {'available' if depth_data else 'unavailable'}")
 
         from app.mt5_connector.account import (
             get_balance,
@@ -120,6 +159,14 @@ def generate_signal(symbol: Optional[str] = None, tv_data: dict = None) -> dict:
             profile_timeframes={"M15": df_m15_profile},
         )
         market_payload.setdefault("risk_config", {})["point"] = symbol_info.get("point", 0.01)
+        if use_tv_primary:
+            market_payload["data_source"] = "tradingview"
+            market_payload["tv_indicators"] = (tv_data_primary or {}).get("indicators") or {}
+            smc_from_tv = (tv_data_primary or {}).get("smc")
+            if smc_from_tv:
+                market_payload["smc"] = smc_from_tv
+        else:
+            market_payload["data_source"] = "mt5"
 
         entry_plan_context = market_payload.setdefault("entry_plan_context", {})
         entry_plan_context.setdefault("risk_reward_to_tp1", None)
@@ -417,3 +464,15 @@ def generate_signal(symbol: Optional[str] = None, tv_data: dict = None) -> dict:
     except Exception as e:
         logger.exception(f"Unexpected error generating signal for {sym}: {e}")
         return {"error": f"Signal generation failed: {e}"}
+
+
+def _run_async(coro):
+    import asyncio
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    if loop.is_running():
+        raise RuntimeError("TV-first sync signal generation cannot run inside an active event loop")
+    return loop.run_until_complete(coro)
