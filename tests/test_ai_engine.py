@@ -37,7 +37,7 @@ print("3. DecisionValidationError OK")
 
 # 4. Prompt builders
 sys_prompt = build_system_prompt()
-assert "trading system" in sys_prompt.lower()
+assert "tradingview daytrade signal" in sys_prompt.lower()
 payload = {"symbol": "XAUUSD", "bid": 2500.0}
 user_prompt = build_user_prompt(payload)
 assert "XAUUSD" in user_prompt

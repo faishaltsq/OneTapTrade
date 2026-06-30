@@ -66,6 +66,13 @@ def build_main_menu_keyboard(is_paused: bool = True, mode: str = "SIGNAL_ONLY", 
             InlineKeyboardButton("\u274c Close All", callback_data="MENU_CLOSE_ALL"),
         ],
     ]
+    if settings.is_tradingview_mode:
+        disabled_callbacks = {"MENU_POSITIONS", "MENU_CLOSE_ALL", "MENU_MODE_SIGNAL", "MENU_MODE_SEMI", "MENU_MODE_AUTO"}
+        keyboard = [
+            [button for button in row if button.callback_data not in disabled_callbacks]
+            for row in keyboard
+        ]
+        keyboard = [row for row in keyboard if row]
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -126,16 +133,22 @@ def format_status_message(status_data: dict) -> str:
     positions_count = status_data.get("open_positions_count", 0)
     paused = status_data.get("paused", False)
     mt5_connected = status_data.get("mt5_connected", False)
+    market_data_source = status_data.get("market_data_source", settings.market_data_source.upper())
+    execution_enabled = status_data.get("execution_enabled", not settings.is_tradingview_mode)
     last_signal_time = status_data.get("last_signal_time")
 
     lines = ["<b>\U0001f4ca Bot Status</b>\n"]
     lines.append(f"<b>Mode:</b> <code>{_escape_html(mode)}</code>")
+    lines.append(f"<b>Data:</b> <code>{_escape_html(market_data_source)}</code>")
+    lines.append(f"<b>Execution:</b> {'enabled' if execution_enabled else 'disabled'}")
     lines.append(f"<b>Symbol:</b> <code>{_escape_html(symbol)}</code>")
 
     if paused:
         lines.append("\n\u23f8\ufe0f <b>TRADING PAUSED</b>")
 
-    if mt5_connected:
+    if settings.is_tradingview_mode:
+        lines.append("\n<b>Signal-only TradingView mode</b>")
+    elif mt5_connected:
         lines.append(f"<b>Equity:</b> ${equity:,.2f}" if equity is not None else "<b>Equity:</b> N/A")
         lines.append(f"<b>Balance:</b> ${balance:,.2f}" if balance is not None else "<b>Balance:</b> N/A")
         pnl_str = f"${daily_pnl:+,.2f}" if daily_pnl is not None else "N/A"

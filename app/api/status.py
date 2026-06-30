@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 
+from app.config import settings
 from app.logger import logger
-from app.mt5_connector.connection import is_mt5_connected
 
 router = APIRouter(prefix="")
 
@@ -12,9 +12,10 @@ async def get_status(request: Request):
     if loop is None:
         raise HTTPException(status_code=503, detail="Trading loop not initialized")
 
-    if not is_mt5_connected():
-        status = loop.get_status()
-        status["warning"] = "MT5 not connected. Account and position data unavailable."
-        return status
-
-    return loop.get_status()
+    status = loop.get_status()
+    status["market_data_source"] = settings.market_data_source.upper()
+    status["execution_enabled"] = not settings.is_tradingview_mode
+    if settings.is_tradingview_mode:
+        status["execution"] = "disabled"
+        status["mt5_required"] = False
+    return status

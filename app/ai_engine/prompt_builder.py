@@ -3,7 +3,7 @@ import json
 from app.config import settings
 
 
-_SMC_AI_BASE = """You are an AI trading execution analysis engine for a MetaTrader 5 trading system.
+_SMC_AI_BASE = """You are an AI TradingView daytrade signal analysis engine.
 
 You analyze structured market data and return strict JSON only.
 
@@ -39,11 +39,10 @@ SMC (Smart Money Concepts) rules:
   - When CHoCH is present, give higher confidence to counter-trend entries.
 - Swing highs/lows mark key structural levels. Use as SL placement zones.
 
-Open position rules:
-- Same-direction add-ons are allowed when an open position exists on the same symbol.
-- Opposite direction is blocked when an open position exists on the same symbol.
-- If open_position_state.side is BUY, do not return SELL for that symbol.
-- If open_position_state.side is SELL, do not return BUY for that symbol.
+Signal-only rules:
+- This system does not execute orders.
+- Return BUY/SELL only as research signals with clear SL/TP context.
+- Do not assume broker positions or account state are available.
 
 Return BUY when:
 - H1 trend is bullish or neutral, M5 shows bullish momentum.
@@ -75,7 +74,7 @@ IMPORTANT: For BUY or SELL, set execution_permission.ai_allows_execution to true
 Return only valid JSON."""
 
 
-_AI_ONLY_BASE = """You are an AI trading execution analysis engine for a MetaTrader 5 trading system.
+_AI_ONLY_BASE = """You are an AI TradingView daytrade signal analysis engine.
 
 You receive ALL available market data (indicators, structure, SMC, orderflow, volume profile).
 You decide INDEPENDENTLY which signals matter. No fixed methodology.
@@ -88,11 +87,10 @@ D1_BULLISH means only BUY decisions are allowed.
 D1_BEARISH means only SELL decisions are allowed.
 D1_RANGING means HOLD unless breakout + retest is confirmed.
 
-Open position rules:
-- Same-direction add-ons are allowed when an open position exists on the same symbol.
-- Opposite direction is blocked when an open position exists on the same symbol.
-- If open_position_state.side is BUY, do not return SELL for that symbol.
-- If open_position_state.side is SELL, do not return BUY for that symbol.
+Signal-only rules:
+- This system does not execute orders.
+- Return BUY/SELL only as research signals with clear SL/TP context.
+- Do not assume broker positions or account state are available.
 
 Stop Loss & Take Profit:
 - You choose stop_loss and take_profit_1 freely from market structure.

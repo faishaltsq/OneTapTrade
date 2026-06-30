@@ -1,41 +1,40 @@
 from types import SimpleNamespace
 
+import pandas as pd
 
-def test_generate_signal_uses_global_open_positions_for_max_entry(monkeypatch):
+
+class FakeProvider:
+    def __init__(self):
+        self.calls = []
+
+    def get_symbol_info(self, symbol):
+        self.calls.append(("info", symbol))
+        return {"point": 0.01, "source": "TRADINGVIEW"}
+
+    def get_latest_price(self, symbol):
+        self.calls.append(("price", symbol))
+        return {"bid": 2010.0, "ask": 2010.0, "last": 2010.0}
+
+    def get_candles(self, symbol, timeframe, count):
+        self.calls.append(("candles", symbol, timeframe, count))
+        return pd.DataFrame(
+            [{"time": i, "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "tick_volume": 100} for i in range(count)]
+        )
+
+
+def test_generate_signal_uses_tradingview_provider_without_mt5(monkeypatch):
     from app.services.signal_service import generate_signal
 
+    provider = FakeProvider()
     captured_context = {}
+    captured_payload = {}
 
-    monkeypatch.setattr("app.mt5_connector.connection.ensure_mt5_connected", lambda: True)
-    monkeypatch.setattr("app.mt5_connector.market_data.select_symbol", lambda symbol: True)
-    monkeypatch.setattr(
-        "app.mt5_connector.market_data.get_symbol_info",
-        lambda symbol: {"point": 0.01},
-    )
-    monkeypatch.setattr(
-        "app.mt5_connector.market_data.get_latest_tick",
-        lambda symbol: {"bid": 2010.0, "ask": 2010.5},
-    )
-    monkeypatch.setattr("app.mt5_connector.market_data.get_spread", lambda symbol: 50)
-    monkeypatch.setattr("app.mt5_connector.market_data.get_candles", lambda *args, **kwargs: [1] * 100)
-    monkeypatch.setattr("app.mt5_connector.market_data.get_market_depth", lambda symbol: None)
+    monkeypatch.setattr("app.mt5_connector.connection.ensure_mt5_connected", lambda: (_ for _ in ()).throw(AssertionError("MT5 called")))
+    monkeypatch.setattr("app.market_data.providers.get_market_data_provider", lambda: provider)
 
-    monkeypatch.setattr("app.mt5_connector.account.get_balance", lambda: 1000.0)
-    monkeypatch.setattr("app.mt5_connector.account.get_equity", lambda: 1000.0)
-    monkeypatch.setattr("app.mt5_connector.account.get_daily_drawdown_percent", lambda: 0.0)
-
-    def fake_open_positions_count(symbol=None):
-        return 1 if symbol is None else 0
-
-    monkeypatch.setattr(
-        "app.mt5_connector.positions.get_open_positions_count",
-        fake_open_positions_count,
-    )
-    monkeypatch.setattr("app.mt5_connector.positions.has_open_position", lambda symbol: False)
-
-    monkeypatch.setattr(
-        "app.analysis.feature_builder.build_market_payload",
-        lambda **kwargs: {
+    def fake_build_market_payload(**kwargs):
+        captured_payload.update(kwargs)
+        return {
             "overall_regime": {"regime": "TRENDING"},
             "higher_timeframe": {},
             "primary_timeframe": {},
@@ -44,9 +43,10 @@ def test_generate_signal_uses_global_open_positions_for_max_entry(monkeypatch):
             "orderflow_proxy": {},
             "risk_config": {},
             "major_trend": {"bias": "D1_BULLISH", "allowed_directions": ["BUY"]},
-            "open_position_state": {"side": "BUY", "symbol": "EURUSD.c"},
-        },
-    )
+            "open_position_state": {},
+        }
+
+    monkeypatch.setattr("app.analysis.feature_builder.build_market_payload", fake_build_market_payload)
 
     decision = SimpleNamespace(
         decision=SimpleNamespace(value="BUY"),
@@ -57,20 +57,12 @@ def test_generate_signal_uses_global_open_positions_for_max_entry(monkeypatch):
     monkeypatch.setattr("app.ai_engine.deepseek_client.get_ai_decision", lambda payload: decision)
     monkeypatch.setattr("app.ai_engine.deepseek_client.validate_decision", lambda ai_decision, market_payload=None: ai_decision)
     monkeypatch.setattr("app.ai_engine.decision_parser.format_decision_for_db", lambda ai_decision: {})
-
     monkeypatch.setattr("app.database.repositories.save_market_snapshot", lambda snapshot: {"id": "snapshot-1"})
     monkeypatch.setattr("app.database.repositories.save_ai_decision", lambda decision_db: {"id": "decision-1"})
     monkeypatch.setattr("app.database.repositories.save_risk_check", lambda **kwargs: None)
-
-    def fake_evaluate(ai_decision, market_context):
-        captured_context.update(market_context)
-        return {"approved": False, "reason": "max positions", "checks": {}}
-
-    monkeypatch.setattr("app.risk.risk_manager.evaluate_decision", fake_evaluate)
-
     monkeypatch.setattr(
         "app.analysis.noise_filter.evaluate_noise_filter",
-        lambda df_d1, df_h4, df_h1, df_m5, risk_profile: {
+        lambda df_d1, df_h4, df_h1, df_m15, risk_profile: {
             "passed": True,
             "blocked_by": None,
             "details": {},
@@ -78,42 +70,64 @@ def test_generate_signal_uses_global_open_positions_for_max_entry(monkeypatch):
         },
     )
 
-    result = generate_signal("EURUSD.c")
+    def fake_evaluate(ai_decision, market_context):
+        captured_context.update(market_context)
+        return {"approved": True, "reason": "signal only", "checks": {}}
 
-    assert result["risk_result"]["approved"] is False
-    assert captured_context["open_positions_count"] == 1
-    assert captured_context["major_trend"] == {"bias": "D1_BULLISH", "allowed_directions": ["BUY"]}
-    assert captured_context["open_position_state"] == {"side": "BUY", "symbol": "EURUSD.c"}
+    monkeypatch.setattr("app.risk.risk_manager.evaluate_decision", fake_evaluate)
+
+    result = generate_signal("OANDA:XAUUSD")
+
+    assert result["symbol"] == "OANDA:XAUUSD"
+    assert result["risk_result"]["approved"] is True
+    assert captured_payload["account_info"]["open_positions_count"] == 0
+    assert captured_payload["account_info"]["has_open_position"] is False
+    assert captured_context["open_positions_count"] == 0
+    assert captured_context["daily_drawdown_percent"] == 0.0
+    assert provider.calls[0] == ("info", "OANDA:XAUUSD")
+    assert ("candles", "OANDA:XAUUSD", "M15", 100) in provider.calls
+    assert result["market_payload"]["market_data_source"] == "TRADINGVIEW"
 
 
-def test_noise_filter_block_returns_hold_without_ai_call():
-    from unittest.mock import patch, MagicMock
-    import pandas as pd
+def test_noise_filter_block_returns_hold_without_ai_call(monkeypatch):
     from app.services import signal_service
 
-    df_empty = pd.DataFrame(columns=["time", "open", "high", "low", "close", "tick_volume"])
+    provider = FakeProvider()
+    monkeypatch.setattr("app.market_data.providers.get_market_data_provider", lambda: provider)
+    monkeypatch.setattr(
+        "app.analysis.feature_builder.build_market_payload",
+        lambda **kwargs: {
+            "overall_regime": {"regime": "TRENDING"},
+            "higher_timeframe": {},
+            "primary_timeframe": {},
+            "entry_timeframe": {},
+            "current_price": {},
+            "orderflow_proxy": {},
+            "risk_config": {},
+        },
+    )
+    monkeypatch.setattr("app.database.repositories.save_market_snapshot", lambda snapshot: {"id": "snap1"})
+    monkeypatch.setattr("app.database.repositories.save_ai_decision", lambda decision_db: {"id": "decision-1"})
+    monkeypatch.setattr("app.ai_engine.decision_parser.format_decision_for_db", lambda ai_decision: {})
+    monkeypatch.setattr(
+        "app.analysis.noise_filter.evaluate_noise_filter",
+        lambda df_d1, df_h4, df_h1, df_m15, risk_profile: {
+            "passed": False,
+            "blocked_by": "volume",
+            "details": {},
+            "hold_reason": "Volume too low",
+        },
+    )
 
-    with patch("app.mt5_connector.connection.ensure_mt5_connected", return_value=True), \
-         patch("app.mt5_connector.market_data.select_symbol", return_value=True), \
-         patch("app.mt5_connector.market_data.get_symbol_info", return_value={"point": 0.01}), \
-         patch("app.mt5_connector.market_data.get_latest_tick", return_value={"bid": 2000, "ask": 2001}), \
-         patch("app.mt5_connector.market_data.get_spread", return_value=10), \
-         patch("app.mt5_connector.market_data.get_candles", return_value=df_empty), \
-         patch("app.mt5_connector.market_data.get_market_depth", return_value=None), \
-         patch("app.mt5_connector.account.get_balance", return_value=10000), \
-         patch("app.mt5_connector.account.get_equity", return_value=10000), \
-         patch("app.mt5_connector.account.get_daily_drawdown_percent", return_value=0.0), \
-         patch("app.mt5_connector.positions.get_open_positions_count", return_value=0), \
-         patch("app.mt5_connector.positions.has_open_position", return_value=False), \
-         patch("app.database.repositories.save_market_snapshot", return_value={"id": "snap1"}), \
-         patch("app.ai_engine.deepseek_client.get_ai_decision") as mock_ai, \
-         patch("app.config.settings.risk_profile", "LOW"):
+    def fail_ai(payload):
+        raise AssertionError("AI should not be called")
 
-        result = signal_service.generate_signal("XAUUSD")
+    monkeypatch.setattr("app.ai_engine.deepseek_client.get_ai_decision", fail_ai)
 
-        assert "ai_decision" in result
-        decision = result["ai_decision"]
-        assert decision.decision.value == "HOLD"
-        assert "Noise filter" in (decision.main_reason or "")
-        assert mock_ai.call_count == 0
-        assert "noise_filter" in result
+    result = signal_service.generate_signal("OANDA:XAUUSD")
+
+    assert "ai_decision" in result
+    decision = result["ai_decision"]
+    assert decision.decision.value == "HOLD"
+    assert "Noise filter" in (decision.main_reason or "")
+    assert "noise_filter" in result

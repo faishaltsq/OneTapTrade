@@ -72,14 +72,29 @@ class TradingLoop:
         symbols = settings.symbols
         results = []
 
-        try:
-            from app.services.breakeven_service import manage_breakeven_stops
+        if settings.is_tradingview_mode:
+            try:
+                from app.market_data.providers import get_market_data_provider
 
-            summary = await asyncio.to_thread(manage_breakeven_stops, None)
-            if summary.get("modified", 0) > 0:
-                logger.info(f"Breakeven management complete: {summary}")
-        except Exception as e:
-            logger.error(f"Breakeven management failed: {e}")
+                provider = get_market_data_provider()
+                if hasattr(provider, "health_check") and not provider.health_check():
+                    message = f"TradingView MCP unavailable: {settings.tv_mcp_path}"
+                    logger.error(message)
+                    return {"symbols": symbols, "results": [], "skipped": True, "error": message}
+            except Exception as e:
+                message = f"TradingView provider unavailable: {e}"
+                logger.error(message)
+                return {"symbols": symbols, "results": [], "skipped": True, "error": message}
+
+        if not settings.is_tradingview_mode:
+            try:
+                from app.services.breakeven_service import manage_breakeven_stops
+
+                summary = await asyncio.to_thread(manage_breakeven_stops, None)
+                if summary.get("modified", 0) > 0:
+                    logger.info(f"Breakeven management complete: {summary}")
+            except Exception as e:
+                logger.error(f"Breakeven management failed: {e}")
 
         for symbol in symbols:
             result = await self._run_symbol(symbol)
@@ -157,6 +172,17 @@ class TradingLoop:
             return signal_result
 
         if mode == "SEMI_AUTO":
+            if settings.is_tradingview_mode:
+                logger.info("SEMI_AUTO requested in TradingView mode — sending signal only; execution disabled")
+                try:
+                    from app.telegram_bot.bot import send_trade_signal
+
+                    await send_trade_signal(ai_decision, risk_result, decision_id or "", signal_result.get("market_payload"))
+                except Exception as e:
+                    logger.error(f"Failed to send TradingView signal: {e}")
+                signal_result["execution_disabled"] = True
+                return signal_result
+
             logger.info("SEMI_AUTO mode — sending signal with approve/reject buttons")
             try:
                 from app.telegram_bot.bot import send_trade_signal
@@ -179,6 +205,11 @@ class TradingLoop:
             return signal_result
 
         if mode == "AUTO_DEMO":
+            if settings.is_tradingview_mode:
+                logger.info("AUTO_DEMO requested in TradingView mode — sending signal only; execution disabled")
+                signal_result["execution_disabled"] = True
+                return signal_result
+
             if not approved:
                 logger.info(f"AUTO_DEMO mode — trade rejected by risk: {risk_result.get('reason')}")
                 try:
@@ -207,6 +238,11 @@ class TradingLoop:
             return exec_result
 
         if mode == "LIVE_AUTO":
+            if settings.is_tradingview_mode:
+                logger.info("LIVE_AUTO requested in TradingView mode — sending signal only; execution disabled")
+                signal_result["execution_disabled"] = True
+                return signal_result
+
             if not settings.is_live_allowed:
                 logger.warning("LIVE_AUTO mode but live trading is disabled — skipping execution")
                 return {"skipped": True, "reason": "Live trading not enabled"}
@@ -273,6 +309,9 @@ class TradingLoop:
             logger.error(f"Failed to send market update: {e}")
 
     async def _do_execute(self, ai_decision, risk_result, symbol, signal_result) -> dict:
+        if settings.is_tradingview_mode:
+            return {"success": False, "error": "Execution disabled in TradingView signal-only mode"}
+
         try:
             from app.mt5_connector.connection import ensure_mt5_connected
             from app.mt5_connector.market_data import get_latest_tick, get_symbol_info
@@ -306,6 +345,9 @@ class TradingLoop:
             return {"success": False, "error": str(e)}
 
     async def handle_approve_callback(self, decision_id: str) -> dict:
+        if settings.is_tradingview_mode:
+            return {"success": False, "error": "Execution disabled in TradingView signal-only mode"}
+
         if decision_id not in self._last_decisions:
             logger.warning(f"handle_approve_callback: decision_id {decision_id} not found")
             return {"success": False, "error": "Decision not found or expired"}

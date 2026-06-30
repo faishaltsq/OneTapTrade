@@ -3,8 +3,8 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from app.config import settings
 from app.logger import logger
-from app.mt5_connector.connection import is_mt5_connected
 
 router = APIRouter(prefix="")
 
@@ -46,7 +46,7 @@ async def update_mode(request: Request, body: ModeUpdateRequest):
         raise HTTPException(status_code=400, detail=error)
 
     logger.info(f"Trading mode changed to {body.mode} via API")
-    return {"status": "ok", "message": f"Mode set to {body.mode}", "mode": loop.mode}
+    return {"status": "ok", "message": f"Mode set to {body.mode}", "mode": loop.status.mode}
 
 
 @router.post("/close-all")
@@ -54,6 +54,11 @@ async def close_all(request: Request):
     loop = request.app.state.trading_loop
     if loop is None:
         raise HTTPException(status_code=503, detail="Trading loop not initialized")
+
+    if settings.is_tradingview_mode:
+        raise HTTPException(status_code=400, detail="Execution disabled in TradingView signal-only mode")
+
+    from app.mt5_connector.connection import is_mt5_connected
 
     if not is_mt5_connected():
         raise HTTPException(status_code=503, detail="MT5 not connected")

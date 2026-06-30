@@ -1,7 +1,8 @@
 import asyncio
+from pathlib import Path
 from typing import Optional
 
-from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Bot, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
 
 from app.config import settings
@@ -194,6 +195,79 @@ async def send_message(text: str, reply_markup=None) -> bool:
         return False
 
 
+def _decision_value(decision) -> str:
+    value = getattr(decision, "decision", decision)
+    return (value.value if hasattr(value, "value") else str(value)).upper()
+
+
+def _is_setup_signal(decision, risk_result: dict) -> bool:
+    return _decision_value(decision) in {"BUY", "SELL"} and bool(risk_result.get("approved"))
+
+
+def _trim_caption(text: str) -> str:
+    if len(text) <= 1000:
+        return text
+    return text[:997].rstrip() + "..."
+
+
+async def _capture_signal_screenshot(symbol: str) -> Path | None:
+    if not settings.is_tradingview_mode:
+        return None
+    try:
+        from app.market_data.tradingview_provider import TradingViewMarketDataProvider
+
+        return await asyncio.to_thread(TradingViewMarketDataProvider().capture_screenshot, symbol, "M5")
+    except Exception as e:
+        logger.warning(f"TradingView screenshot unavailable for {symbol}: {e}")
+        return None
+
+
+async def _send_private_signal_photo(text: str, screenshot_path: Path, reply_markup=None) -> bool:
+    if _application is None or _application.bot is None:
+        return False
+    try:
+        with Path(screenshot_path).open("rb") as photo:
+            await _application.bot.send_photo(
+                chat_id=settings.telegram_allowed_chat_id,
+                photo=photo,
+                caption=_trim_caption(text),
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to send Telegram signal photo, falling back to text: {e}")
+        return await send_message(text, reply_markup=reply_markup)
+
+
+async def _broadcast_signal_to_channel(text: str, screenshot_path: Path | None) -> bool:
+    if not settings.signal_bot_token or not settings.signal_channel_id:
+        return False
+    try:
+        bot = Bot(settings.signal_bot_token)
+        if screenshot_path is not None:
+            try:
+                with Path(screenshot_path).open("rb") as photo:
+                    await bot.send_photo(
+                        chat_id=settings.signal_channel_id,
+                        photo=photo,
+                        caption=_trim_caption(text),
+                        parse_mode="HTML",
+                    )
+                    return True
+            except Exception as e:
+                logger.warning(f"Failed to broadcast signal photo, falling back to text: {e}")
+        await bot.send_message(
+            chat_id=settings.signal_channel_id,
+            text=text,
+            parse_mode="HTML",
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Failed to broadcast signal to Telegram channel: {e}")
+        return False
+
+
 async def send_main_menu(text: str = None) -> bool:
     paused = False
     mode = settings.bot_mode
@@ -223,9 +297,11 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
     try:
         symbol = risk_result.get("symbol", settings.default_symbol)
         signal_text = format_signal_message(decision, risk_result, symbol, market_payload=market_payload)
+        is_setup_signal = _is_setup_signal(decision, risk_result)
+        screenshot_path = await _capture_signal_screenshot(symbol) if is_setup_signal else None
 
         reply_markup = None
-        if settings.is_semi_auto and risk_result.get("approved"):
+        if settings.is_semi_auto and risk_result.get("approved") and not settings.is_tradingview_mode:
             keyboard = [
                 [
                     InlineKeyboardButton(
@@ -242,7 +318,12 @@ async def send_trade_signal(decision, risk_result: dict, decision_id: str, marke
 
         _pending_decisions[decision_id] = decision
 
-        sent = await send_message(signal_text, reply_markup=reply_markup)
+        if screenshot_path is not None:
+            sent = await _send_private_signal_photo(signal_text, screenshot_path, reply_markup=reply_markup)
+        else:
+            sent = await send_message(signal_text, reply_markup=reply_markup)
+        if is_setup_signal:
+            await _broadcast_signal_to_channel(signal_text, screenshot_path)
         if sent:
             logger.info(f"Trade signal sent for decision {decision_id}")
         return sent

@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     bot_mode: str = "SIGNAL_ONLY"
     live_trading_enabled: bool = False
+    market_data_source: str = "TRADINGVIEW"
 
     mt5_login: Optional[int] = None
     mt5_password: Optional[str] = None
@@ -19,12 +20,14 @@ class Settings(BaseSettings):
 
     telegram_bot_token: Optional[str] = None
     telegram_allowed_chat_id: Optional[str] = None
+    signal_bot_token: Optional[str] = None
+    signal_channel_id: Optional[str] = None
 
     supabase_url: Optional[str] = None
     supabase_service_role_key: Optional[str] = None
 
-    default_symbol: str = "XAUUSD"
-    default_symbols: str = ""
+    default_symbol: str = "OANDA:XAUUSD"
+    default_symbols: str = "OANDA:XAUUSD,OANDA:EURUSD,OANDA:GBPUSD,OANDA:GBPJPY,NASDAQ:NDX,SP:SPX,BITSTAMP:BTCUSD"
     risk_profile: str = "MEDIUM"
     strategy_mode: str = "SMC_AI"
     risk_per_trade_percent: float = 0.5
@@ -33,9 +36,18 @@ class Settings(BaseSettings):
     min_confidence: float = 0.65
     min_risk_reward: float = 1.5
     max_spread_points: int = 35
-    trading_loop_interval_seconds: int = 300
+    trading_loop_interval_seconds: int = 900
+    daytrade_timeframes: str = "D1,H4,H1,M15,M5"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    tv_enabled: bool = True
+    tv_mcp_path: str = "tv"
+    tv_debug_port: int = 9222
+    tv_health_check_interval: int = 30
+    tv_mcp_max_retries: int = 3
+    tv_exe_path: Optional[str] = None
+    tv_launch_on_startup: bool = False
+
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
     @field_validator("mt5_login", mode="before")
     @classmethod
@@ -82,6 +94,14 @@ class Settings(BaseSettings):
         if self.default_symbols:
             return [s.strip() for s in self.default_symbols.split(",") if s.strip()]
         return [self.default_symbol]
+
+    @property
+    def daytrade_timeframe_list(self) -> list[str]:
+        return [tf.strip() for tf in self.daytrade_timeframes.split(",") if tf.strip()]
+
+    @property
+    def is_tradingview_mode(self) -> bool:
+        return self.market_data_source.upper() == "TRADINGVIEW"
 
     @property
     def is_live_allowed(self) -> bool:

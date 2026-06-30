@@ -10,6 +10,55 @@ def test_strategy_mode_default_is_smc_ai():
     assert s.strategy_mode == "SMC_AI"
 
 
+def test_settings_ignore_unknown_env_vars(tmp_path):
+    env_file = tmp_path / "extra.env"
+    env_file.write_text("BOT_MODE=SIGNAL_ONLY\nUNKNOWN_SETTING=value\n", encoding="utf-8")
+
+    from app.config import Settings
+
+    s = Settings(_env_file=env_file)
+    assert s.bot_mode == "SIGNAL_ONLY"
+
+
+def test_tradingview_defaults():
+    from app.config import Settings
+
+    s = Settings(_env_file=None)
+    assert s.market_data_source == "TRADINGVIEW"
+    assert s.bot_mode == "SIGNAL_ONLY"
+    assert s.risk_profile == "MEDIUM"
+    assert s.trading_loop_interval_seconds == 900
+    assert s.default_symbol == "OANDA:XAUUSD"
+    assert all("." not in symbol for symbol in s.symbols)
+    assert s.daytrade_timeframe_list == ["D1", "H4", "H1", "M15", "M5"]
+    assert s.is_tradingview_mode is True
+
+
+def test_tradingview_env_fields(tmp_path):
+    env_file = tmp_path / "tv.env"
+    env_file.write_text(
+        "TV_ENABLED=true\n"
+        "TV_MCP_PATH=custom-mcp\n"
+        "TV_DEBUG_PORT=9333\n"
+        "TV_HEALTH_CHECK_INTERVAL=45\n"
+        "TV_MCP_MAX_RETRIES=5\n"
+        "TV_EXE_PATH=C:\\TradingView\\TradingView.exe\n"
+        "TV_LAUNCH_ON_STARTUP=true\n",
+        encoding="utf-8",
+    )
+
+    from app.config import Settings
+
+    s = Settings(_env_file=env_file)
+    assert s.tv_enabled is True
+    assert s.tv_mcp_path == "custom-mcp"
+    assert s.tv_debug_port == 9333
+    assert s.tv_health_check_interval == 45
+    assert s.tv_mcp_max_retries == 5
+    assert s.tv_exe_path == "C:\\TradingView\\TradingView.exe"
+    assert s.tv_launch_on_startup is True
+
+
 def test_risk_profile_config_has_style_and_timeframe_fields():
     from app.config import settings
 

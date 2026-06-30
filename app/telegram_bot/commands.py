@@ -13,9 +13,6 @@ from app.telegram_bot.message_templates import (
     format_status_message,
     format_welcome_message,
 )
-from app.mt5_connector.connection import is_mt5_connected
-from app.mt5_connector.account import get_balance, get_equity, get_daily_pnl, get_daily_drawdown_percent
-from app.mt5_connector.positions import get_open_positions, get_open_positions_count, get_today_realized_pnl
 
 
 def _check_allowed(update: Update) -> bool:
@@ -86,7 +83,11 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _reply(update, "<b>\u26a0\ufe0f Unauthorized</b>")
         return
 
-    mt5_ok = await asyncio.to_thread(is_mt5_connected)
+    mt5_ok = False
+    if not settings.is_tradingview_mode:
+        from app.mt5_connector.connection import is_mt5_connected
+
+        mt5_ok = await asyncio.to_thread(is_mt5_connected)
     paused = False
     trading_loop = get_trading_loop()
 
@@ -117,6 +118,9 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     status_data["symbol"] = active_symbol
 
     if mt5_ok:
+        from app.mt5_connector.account import get_balance, get_equity, get_daily_pnl, get_daily_drawdown_percent
+        from app.mt5_connector.positions import get_open_positions_count
+
         (
             status_data["equity"],
             status_data["balance"],
@@ -222,7 +226,10 @@ async def mode_semi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if trading_loop is None:
         await asyncio.to_thread(update_bot_mode, "SEMI_AUTO")
     await asyncio.to_thread(log_telegram_command, settings.telegram_allowed_chat_id, "/mode_semi", result="SEMI_AUTO")
-    await _reply(update, "<b>\U0001f50d Mode set to SEMI_AUTO.</b>\n<i>Signals require your approval before execution.</i>")
+    if settings.is_tradingview_mode:
+        await _reply(update, "<b>\U0001f50d Mode set to SEMI_AUTO.</b>\n<i>TradingView mode sends signals only. Execution disabled.</i>")
+    else:
+        await _reply(update, "<b>\U0001f50d Mode set to SEMI_AUTO.</b>\n<i>Signals require your approval before execution.</i>")
 
 
 async def mode_demo_auto_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -239,13 +246,23 @@ async def mode_demo_auto_command(update: Update, context: ContextTypes.DEFAULT_T
     if trading_loop is None:
         await asyncio.to_thread(update_bot_mode, "AUTO_DEMO")
     await asyncio.to_thread(log_telegram_command, settings.telegram_allowed_chat_id, "/mode_demo_auto", result="AUTO_DEMO")
-    await _reply(update, "<b>\U0001f4f2 Mode set to AUTO_DEMO.</b>\n<i>Demo account — trades execute automatically.</i>")
+    if settings.is_tradingview_mode:
+        await _reply(update, "<b>\U0001f4f2 Mode set to AUTO_DEMO.</b>\n<i>TradingView mode sends signals only. Execution disabled.</i>")
+    else:
+        await _reply(update, "<b>\U0001f4f2 Mode set to AUTO_DEMO.</b>\n<i>Demo account — trades execute automatically.</i>")
 
 
 async def positions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _check_allowed(update):
         await _reply(update, "<b>\u26a0\ufe0f Unauthorized</b>")
         return
+
+    if settings.is_tradingview_mode:
+        await _reply(update, "<b>\u2139\ufe0f Positions unavailable in TradingView signal-only mode.</b>")
+        return
+
+    from app.mt5_connector.connection import is_mt5_connected
+    from app.mt5_connector.positions import get_open_positions, get_today_realized_pnl
 
     if not await asyncio.to_thread(is_mt5_connected):
         await _reply(update, "<b>\u26a0\ufe0f MT5 not connected</b>")
@@ -261,6 +278,13 @@ async def close_all_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if not _check_allowed(update):
         await _reply(update, "<b>\u26a0\ufe0f Unauthorized</b>")
         return
+
+    if settings.is_tradingview_mode:
+        await _reply(update, "<b>Execution disabled in TradingView signal-only mode.</b>")
+        return
+
+    from app.mt5_connector.connection import is_mt5_connected
+    from app.mt5_connector.positions import get_open_positions
 
     if not await asyncio.to_thread(is_mt5_connected):
         await _reply(update, "<b>\u26a0\ufe0f MT5 not connected</b>")

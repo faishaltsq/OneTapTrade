@@ -10,86 +10,42 @@ def generate_signal(symbol: Optional[str] = None) -> dict:
     logger.info(f"Generating signal for {sym}...")
 
     try:
-        from app.mt5_connector.connection import ensure_mt5_connected
+        from app.market_data.providers import get_market_data_provider, neutral_account_context
 
-        if not ensure_mt5_connected():
-            logger.error("MT5 not connected, cannot generate signal")
-            return {"error": "MT5 not connected"}
+        provider = get_market_data_provider()
+        logger.info(f"Step 1: Market data provider ready — source={settings.market_data_source}")
 
-        logger.info("Step 1: MT5 connected")
-    except Exception as e:
-        logger.error(f"MT5 connection check failed: {e}")
-        return {"error": f"MT5 connection check failed: {e}"}
-
-    try:
-        from app.mt5_connector.market_data import (
-            get_candles,
-            get_latest_tick,
-            get_market_depth,
-            get_spread,
-            get_symbol_info,
-            select_symbol,
-        )
-
-        if not select_symbol(sym):
-            return {"error": f"Failed to select symbol: {sym} (may be closed or invalid)"}
-        logger.info(f"Step 2: Symbol selected: {sym}")
-
-        symbol_info = get_symbol_info(sym)
+        symbol_info = provider.get_symbol_info(sym)
         if symbol_info is None:
             return {"error": f"Failed to get symbol info for {sym}"}
-        logger.info(f"Step 3: Got symbol info for {sym}")
+        logger.info(f"Step 2: Got symbol info for {sym}")
 
-        tick = get_latest_tick(sym)
-        if tick is None:
-            return {"error": f"Failed to get tick data for {sym}"}
-        bid = tick.get("bid", 0.0)
-        ask = tick.get("ask", 0.0)
-        logger.info(f"Step 4: Got latest tick — bid={bid}, ask={ask}")
+        price = provider.get_latest_price(sym)
+        bid = price.get("bid") or price.get("last") or 0.0
+        ask = price.get("ask") or price.get("last") or bid
+        logger.info(f"Step 3: Got latest TradingView price — bid={bid}, ask={ask}")
 
-        spread = get_spread(sym)
-        spread_points = int(spread) if spread is not None else 0
+        spread_points = 0
         logger.info(f"Step 5: Spread = {spread_points} pts")
 
-        df_d1 = get_candles(sym, timeframe="D1", count=50)
-        df_h4 = get_candles(sym, timeframe="H4", count=100)
-        df_h1 = get_candles(sym, timeframe="H1", count=100)
-        df_m15 = get_candles(sym, timeframe="M5", count=100)
+        timeframes = settings.daytrade_timeframe_list
+        df_d1 = provider.get_candles(sym, timeframe=timeframes[0], count=50)
+        df_h4 = provider.get_candles(sym, timeframe=timeframes[1], count=100)
+        df_h1 = provider.get_candles(sym, timeframe=timeframes[2], count=100)
+        df_m15 = provider.get_candles(sym, timeframe=timeframes[3], count=100)
         logger.info(
-            f"Step 6: Fetched candles — D1: {len(df_d1)}, H4: {len(df_h4)}, H1: {len(df_h1)}, M5: {len(df_m15)}"
+            f"Step 6: Fetched candles — {timeframes[0]}: {len(df_d1)}, {timeframes[1]}: {len(df_h4)}, "
+            f"{timeframes[2]}: {len(df_h1)}, {timeframes[3]}: {len(df_m15)}"
         )
 
         depth_data = None
-        try:
-            depth_data = get_market_depth(sym)
-        except Exception as e:
-            logger.debug(f"Market depth unavailable: {e}")
-        logger.info(f"Step 7: Market depth {'available' if depth_data else 'unavailable'}")
+        logger.info("Step 7: Market depth unavailable in TradingView signal-only mode")
 
-        from app.mt5_connector.account import (
-            get_balance,
-            get_daily_drawdown_percent,
-            get_equity,
-        )
-        from app.mt5_connector.positions import get_open_positions_count, has_open_position
-
-        balance = get_balance()
-        equity = get_equity()
-        daily_drawdown = get_daily_drawdown_percent()
-        open_positions_count = get_open_positions_count(None)
-        has_open = has_open_position(sym)
-
-        account_context = {
-            "balance": balance,
-            "equity": equity,
-            "daily_pnl_percent": None,
-            "daily_drawdown_percent": daily_drawdown,
-            "open_positions_count": open_positions_count,
-            "has_open_position": has_open,
-        }
+        account_context = neutral_account_context()
+        daily_drawdown = account_context["daily_drawdown_percent"]
+        open_positions_count = account_context["open_positions_count"]
         logger.info(
-            f"Step 8: Account context — balance={balance}, equity={equity}, "
-            f"dd={daily_drawdown}%, positions={open_positions_count}"
+            f"Step 8: Neutral account context — dd={daily_drawdown}%, positions={open_positions_count}"
         )
 
         from app.analysis.feature_builder import build_market_payload
@@ -108,6 +64,8 @@ def generate_signal(symbol: Optional[str] = None) -> dict:
             account_info=account_context,
         )
         market_payload.setdefault("risk_config", {})["point"] = symbol_info.get("point", 0.01)
+        market_payload["market_data_source"] = settings.market_data_source.upper()
+        market_payload["daytrade_timeframes"] = timeframes
         logger.info(f"Step 9: Market payload built — regime: {market_payload.get('overall_regime', {}).get('regime')}")
 
         logger.info("Step 10: Saving market snapshot to DB...")
@@ -119,15 +77,15 @@ def generate_signal(symbol: Optional[str] = None) -> dict:
             current_price = market_payload.get("current_price", {})
 
             technical = {
-                "H4": {
+                timeframes[1]: {
                     "indicators": market_payload.get("higher_timeframe", {}).get("indicators", {}),
                     "market_structure": market_payload.get("higher_timeframe", {}).get("market_structure", {}),
                 },
-                "H1": {
+                timeframes[2]: {
                     "indicators": market_payload.get("primary_timeframe", {}).get("indicators", {}),
                     "market_structure": market_payload.get("primary_timeframe", {}).get("market_structure", {}),
                 },
-                "M5": {
+                timeframes[3]: {
                     "indicators": market_payload.get("entry_timeframe", {}).get("indicators", {}),
                     "market_structure": market_payload.get("entry_timeframe", {}).get("market_structure", {}),
                 },
@@ -141,7 +99,7 @@ def generate_signal(symbol: Optional[str] = None) -> dict:
 
             snapshot = {
                 "symbol": sym,
-                "timeframe": "M5",
+                "timeframe": timeframes[3],
                 "bid": bid,
                 "ask": ask,
                 "spread_points": spread_points,

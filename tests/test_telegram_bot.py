@@ -63,6 +63,43 @@ def test_signal_message_uses_m5_entry_label():
     assert "M15" not in message
 
 
+def test_tradingview_menu_hides_execution_controls():
+    from app.config import settings
+    from app.telegram_bot.message_templates import build_main_menu_keyboard
+
+    original_source = settings.market_data_source
+    try:
+        settings.market_data_source = "TRADINGVIEW"
+        callbacks = _keyboard_callback_data(build_main_menu_keyboard())
+        assert "MENU_CLOSE_ALL" not in callbacks
+        assert "MENU_MODE_SIGNAL" not in callbacks
+        assert "MENU_MODE_SEMI" not in callbacks
+        assert "MENU_MODE_AUTO" not in callbacks
+        assert "MENU_POSITIONS" not in callbacks
+        assert "MENU_RISK_TRADE_025" not in callbacks
+        assert "MENU_RISK_TRADE_050" not in callbacks
+        assert "MENU_RISK_TRADE_100" not in callbacks
+    finally:
+        settings.market_data_source = original_source
+
+
+def test_tradingview_status_message_shows_signal_only_mode():
+    from app.telegram_bot.message_templates import format_status_message
+
+    message = format_status_message(
+        {
+            "mode": "SIGNAL_ONLY",
+            "symbol": "OANDA:XAUUSD",
+            "market_data_source": "TRADINGVIEW",
+            "execution_enabled": False,
+        }
+    )
+
+    assert "TRADINGVIEW" in message
+    assert "Execution:</b> disabled" in message
+    assert "Signal-only TradingView mode" in message
+
+
 def _market_payload_fixture():
     return {
         "current_price": {"bid": 2432.10, "ask": 2432.45, "spread_points": 35},
@@ -285,6 +322,12 @@ class FakeApplication:
         self.shutdown_called = True
 
 
+class FakeSendBot:
+    def __init__(self):
+        self.send_message = AsyncMock()
+        self.send_photo = AsyncMock()
+
+
 @pytest.mark.asyncio
 async def test_run_bot_uses_async_lifecycle_for_embedded_polling():
     from app.telegram_bot import bot as bot_module
@@ -314,6 +357,157 @@ async def test_run_bot_uses_async_lifecycle_for_embedded_polling():
             with pytest.raises(asyncio.CancelledError):
                 await task
         bot_module._application = None
+
+
+def _buy_decision():
+    from app.ai_engine.schemas import AIDecisionResponse, ConfidenceLabel, Decision, MarketRegime, TimeframeBias
+
+    return AIDecisionResponse(
+        decision=Decision.BUY,
+        confidence=0.72,
+        confidence_label=ConfidenceLabel.HIGH,
+        market_regime=MarketRegime.TRENDING_UP,
+        higher_timeframe_bias=TimeframeBias.BULLISH,
+        entry_timeframe_bias=TimeframeBias.BULLISH,
+        main_reason="Momentum aligned.",
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_trade_signal_sends_private_photo_and_channel_broadcast_for_buy_setup(tmp_path):
+    from app.config import settings
+    from app.telegram_bot import bot as bot_module
+
+    chart_path = tmp_path / "chart.png"
+    chart_path.write_bytes(b"png")
+    private_bot = FakeSendBot()
+    channel_bot = FakeSendBot()
+    fake_app = MagicMock(bot=private_bot)
+
+    originals = {
+        "application": bot_module._application,
+        "telegram_bot_token": settings.telegram_bot_token,
+        "telegram_allowed_chat_id": settings.telegram_allowed_chat_id,
+        "signal_bot_token": settings.signal_bot_token,
+        "signal_channel_id": settings.signal_channel_id,
+        "market_data_source": settings.market_data_source,
+    }
+    try:
+        bot_module._application = fake_app
+        settings.telegram_bot_token = "private-token"
+        settings.telegram_allowed_chat_id = "123"
+        settings.signal_bot_token = "signal-token"
+        settings.signal_channel_id = "@signals"
+        settings.market_data_source = "TRADINGVIEW"
+
+        with patch("app.telegram_bot.bot._capture_signal_screenshot", new=AsyncMock(return_value=chart_path)) as capture:
+            with patch("app.telegram_bot.bot.Bot", return_value=channel_bot) as bot_cls:
+                sent = await bot_module.send_trade_signal(
+                    _buy_decision(),
+                    {"approved": True, "symbol": "OANDA:XAUUSD"},
+                    "decision-1",
+                    {},
+                )
+
+        assert sent is True
+        capture.assert_awaited_once_with("OANDA:XAUUSD")
+        private_bot.send_photo.assert_awaited_once()
+        private_kwargs = private_bot.send_photo.await_args.kwargs
+        assert private_kwargs["chat_id"] == "123"
+        assert "OANDA:XAUUSD" in private_kwargs["caption"]
+        bot_cls.assert_called_once_with("signal-token")
+        channel_bot.send_photo.assert_awaited_once()
+        channel_kwargs = channel_bot.send_photo.await_args.kwargs
+        assert channel_kwargs["chat_id"] == "@signals"
+        assert "OANDA:XAUUSD" in channel_kwargs["caption"]
+        private_bot.send_message.assert_not_awaited()
+    finally:
+        bot_module._application = originals["application"]
+        settings.telegram_bot_token = originals["telegram_bot_token"]
+        settings.telegram_allowed_chat_id = originals["telegram_allowed_chat_id"]
+        settings.signal_bot_token = originals["signal_bot_token"]
+        settings.signal_channel_id = originals["signal_channel_id"]
+        settings.market_data_source = originals["market_data_source"]
+
+
+@pytest.mark.asyncio
+async def test_send_trade_signal_does_not_channel_broadcast_hold(tmp_path):
+    from app.ai_engine.schemas import AIDecisionResponse, ConfidenceLabel, Decision, MarketRegime, TimeframeBias
+    from app.config import settings
+    from app.telegram_bot import bot as bot_module
+
+    private_bot = FakeSendBot()
+    fake_app = MagicMock(bot=private_bot)
+    hold_decision = AIDecisionResponse(
+        decision=Decision.HOLD,
+        confidence=0.3,
+        confidence_label=ConfidenceLabel.LOW,
+        market_regime=MarketRegime.RANGING,
+        higher_timeframe_bias=TimeframeBias.UNCLEAR,
+        entry_timeframe_bias=TimeframeBias.UNCLEAR,
+    )
+
+    originals = {
+        "application": bot_module._application,
+        "telegram_bot_token": settings.telegram_bot_token,
+        "telegram_allowed_chat_id": settings.telegram_allowed_chat_id,
+        "signal_bot_token": settings.signal_bot_token,
+        "signal_channel_id": settings.signal_channel_id,
+        "market_data_source": settings.market_data_source,
+    }
+    try:
+        bot_module._application = fake_app
+        settings.telegram_bot_token = "private-token"
+        settings.telegram_allowed_chat_id = "123"
+        settings.signal_bot_token = "signal-token"
+        settings.signal_channel_id = "@signals"
+        settings.market_data_source = "TRADINGVIEW"
+
+        with patch("app.telegram_bot.bot._capture_signal_screenshot", new=AsyncMock()) as capture:
+            with patch("app.telegram_bot.bot.Bot") as bot_cls:
+                sent = await bot_module.send_trade_signal(hold_decision, {"approved": True, "symbol": "OANDA:XAUUSD"}, "decision-2", {})
+
+        assert sent is True
+        capture.assert_not_awaited()
+        bot_cls.assert_not_called()
+        private_bot.send_message.assert_awaited_once()
+        private_bot.send_photo.assert_not_awaited()
+    finally:
+        bot_module._application = originals["application"]
+        settings.telegram_bot_token = originals["telegram_bot_token"]
+        settings.telegram_allowed_chat_id = originals["telegram_allowed_chat_id"]
+        settings.signal_bot_token = originals["signal_bot_token"]
+        settings.signal_channel_id = originals["signal_channel_id"]
+        settings.market_data_source = originals["market_data_source"]
+
+
+@pytest.mark.asyncio
+async def test_channel_broadcast_falls_back_to_text_when_photo_unreadable(tmp_path):
+    from app.config import settings
+    from app.telegram_bot import bot as bot_module
+
+    channel_bot = FakeSendBot()
+    missing_chart = tmp_path / "missing.png"
+
+    original_token = settings.signal_bot_token
+    original_channel = settings.signal_channel_id
+    try:
+        settings.signal_bot_token = "signal-token"
+        settings.signal_channel_id = "@signals"
+
+        with patch("app.telegram_bot.bot.Bot", return_value=channel_bot):
+            sent = await bot_module._broadcast_signal_to_channel("<b>BUY OANDA:XAUUSD</b>", missing_chart)
+
+        assert sent is True
+        channel_bot.send_photo.assert_not_awaited()
+        channel_bot.send_message.assert_awaited_once_with(
+            chat_id="@signals",
+            text="<b>BUY OANDA:XAUUSD</b>",
+            parse_mode="HTML",
+        )
+    finally:
+        settings.signal_bot_token = original_token
+        settings.signal_channel_id = original_channel
 
 
 class FakeCallbackUpdate:
@@ -363,9 +557,11 @@ async def test_status_button_uses_global_open_positions_count():
 
     original_chat_id = settings.telegram_allowed_chat_id
     original_default_symbol = settings.default_symbol
+    original_market_data_source = settings.market_data_source
     try:
         settings.telegram_allowed_chat_id = "123"
         settings.default_symbol = "XAUUSD.c"
+        settings.market_data_source = "MT5"
         update = FakeCallbackUpdate()
 
         def fake_open_positions_count(symbol=None):
@@ -383,6 +579,7 @@ async def test_status_button_uses_global_open_positions_count():
     finally:
         settings.telegram_allowed_chat_id = original_chat_id
         settings.default_symbol = original_default_symbol
+        settings.market_data_source = original_market_data_source
 
 
 @pytest.mark.asyncio
@@ -391,8 +588,10 @@ async def test_positions_button_shows_today_realized_pnl():
     from app.telegram_bot.callbacks import menu_positions_callback
 
     original_chat_id = settings.telegram_allowed_chat_id
+    original_market_data_source = settings.market_data_source
     try:
         settings.telegram_allowed_chat_id = "123"
+        settings.market_data_source = "MT5"
         update = FakeCallbackUpdate()
 
         positions = [
@@ -401,7 +600,7 @@ async def test_positions_button_shows_today_realized_pnl():
 
         with patch("app.mt5_connector.connection.is_mt5_connected", return_value=True):
             with patch("app.mt5_connector.positions.get_open_positions", return_value=positions):
-                with patch("app.telegram_bot.callbacks.get_today_realized_pnl", return_value=3.0):
+                with patch("app.mt5_connector.positions.get_today_realized_pnl", return_value=3.0):
                     await menu_positions_callback(update, MagicMock())
 
         text = update.callback_query.edit_message_text.await_args.args[0]
@@ -409,6 +608,7 @@ async def test_positions_button_shows_today_realized_pnl():
         assert "Today Total P&amp;L: $+5.00" in text
     finally:
         settings.telegram_allowed_chat_id = original_chat_id
+        settings.market_data_source = original_market_data_source
 
 
 @pytest.mark.asyncio

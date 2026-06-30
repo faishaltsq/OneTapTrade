@@ -1,20 +1,20 @@
-# OneTapTrade - AI Trading Executor
+# OneTapTrade - AI TradingView Signal Bot
 
-AI-assisted MetaTrader 5 scalping executor with DeepSeek analysis, Telegram controls, Supabase audit logging, Smart Money Concepts context, and strict safety gates.
+AI-assisted TradingView daytrade signal bot with DeepSeek analysis, Telegram controls, Supabase audit logging, Smart Money Concepts context, and strict signal-only safety gates.
 
-> Trading risk warning: this project is for education, research, and demo trading first. Financial markets can cause substantial loss. Keep `LIVE_TRADING_ENABLED=false` unless you understand every risk and have tested on demo.
+> Trading risk warning: this project is for education and research. Financial markets can cause substantial loss. Default mode is signal-only and execution is disabled in TradingView mode.
 
 ## What It Does
 
-- Connects to MetaTrader 5 and reads live market data.
-- Builds multi-timeframe market payloads using D1, H4, H1, and M5 candles.
+- Reads chart data through TradingView MCP.
+- Builds multi-timeframe daytrade payloads using D1, H4, H1, M15, and M5 context.
 - Sends structured market context to DeepSeek and expects strict JSON trading decisions.
-- Applies risk-manager checks before any execution.
-- Supports Signal Only, Semi Auto, Demo Auto, and Live Auto modes.
-- Sends Telegram dashboards, approvals, positions, settings, and control buttons.
+- Applies signal quality checks before alerts.
+- Runs signal-only by default; execution is disabled in TradingView mode.
+- Sends Telegram dashboards, chart screenshots, settings, and control buttons.
+- Broadcasts approved BUY/SELL setup signals to a Telegram channel via separate signal bot.
 - Logs market snapshots, AI decisions, risk checks, trades, events, and Telegram commands to Supabase.
-- Syncs open MT5 positions on startup so restart does not forget live exposure.
-- Moves stop loss to breakeven after price reaches 30% progress toward TP.
+- Uses TradingView-format symbols such as `OANDA:XAUUSD`.
 
 ## Current Strategy
 
@@ -22,12 +22,11 @@ AI-assisted MetaTrader 5 scalping executor with DeepSeek analysis, Telegram cont
 - `D1_BULLISH` allows BUY only.
 - `D1_BEARISH` allows SELL only.
 - `D1_RANGING` blocks BUY/SELL unless breakout and retest are confirmed.
-- H1 is primary execution direction context after D1 allows direction.
-- M5 is entry trigger timeframe.
+- H1 is primary daytrade bias after D1 allows direction.
+- M15 is setup timeframe and M5 is entry trigger context.
 - SMC context includes order blocks, fair value gaps, CHoCH, swing levels, and liquidity levels.
-- Same-direction add-ons are allowed when an open position exists on the same symbol.
-- Opposite-direction trades are blocked while a live position exists on the same symbol.
-- Spread is ignored for trade decisions.
+- Position and account checks are neutral in TradingView signal-only mode.
+- Spread is `0` because TradingView candles do not provide broker bid/ask spread.
 - AI owns SL/TP geometry, but BUY/SELL decisions must provide stop loss and take profit.
 - Strategy mode (SMC+AI or AI-only) controls how AI processes market data. See Strategy Modes below.
 - Trading style is bound to risk profile: LOW=Swing, MEDIUM=Daytrade, HIGH=Scalping. See Trading Style Profiles below.
@@ -72,15 +71,14 @@ When noise filter blocks, bot returns HOLD with reason, saves to DB, sends Teleg
 ## Architecture
 
 ```text
-MT5 Terminal
+TradingView MCP
     |
     v
 FastAPI backend + trading loop
     |
-    +--> Market analysis: D1/H4/H1/M5, SMC, trend, orderflow proxy
+    +--> Market analysis: D1/H4/H1/M15/M5, SMC, trend, orderflow proxy
     +--> DeepSeek AI decision engine
-    +--> Risk manager and position sizing
-    +--> MT5 order execution
+    +--> Signal quality checks
     +--> Telegram control bot
     +--> Supabase logging and settings
 ```
@@ -89,7 +87,7 @@ FastAPI backend + trading loop
 
 - Python 3.10+
 - FastAPI and Uvicorn
-- MetaTrader5 Python package
+- TradingView MCP
 - DeepSeek API through OpenAI-compatible client
 - python-telegram-bot
 - Supabase Python client
@@ -101,9 +99,9 @@ FastAPI backend + trading loop
 | Mode | Signals | Telegram Approval | Auto Execute | Live Money |
 | --- | --- | --- | --- | --- |
 | `SIGNAL_ONLY` | Yes | No | No | No |
-| `SEMI_AUTO` | Yes | Required | After approval | Depends on account and live flag |
-| `AUTO_DEMO` | Yes | No | Yes | No, intended for demo |
-| `LIVE_AUTO` | Yes | No | Yes | Yes, only if `LIVE_TRADING_ENABLED=true` |
+| `SEMI_AUTO` | Yes | Informational only in TradingView mode | No | No |
+| `AUTO_DEMO` | Yes | No | No in TradingView mode | No |
+| `LIVE_AUTO` | Yes | No | No in TradingView mode | No |
 
 ## Repository Layout
 
@@ -114,7 +112,8 @@ FastAPI backend + trading loop
 │   ├── analysis/           # Indicators, market structure, SMC, trend payloads
 │   ├── api/                # FastAPI routes
 │   ├── database/           # Supabase client and repositories
-│   ├── mt5_connector/      # MT5 connection, data, account, positions, execution
+│   ├── market_data/        # TradingView provider boundary
+│   ├── mt5_connector/      # Legacy MT5 modules, inactive in TradingView mode
 │   ├── risk/               # Risk manager, position sizing, trade validation
 │   ├── services/           # Trading loop, breakeven, position state sync
 │   └── telegram_bot/       # Commands, callbacks, message templates, bot lifecycle
@@ -129,9 +128,8 @@ FastAPI backend + trading loop
 
 ## Prerequisites
 
-- Windows machine with MetaTrader 5 installed.
-- MT5 demo account logged in and broker symbols visible in Market Watch.
 - Python 3.10 or newer. Current development used Python 3.13.
+- TradingView MCP CLI available as `tv` or configured through `TV_MCP_PATH`.
 - DeepSeek API key.
 - Telegram bot token from BotFather.
 - Supabase project.
@@ -188,20 +186,21 @@ API runs on `http://localhost:8000`.
 | --- | --- | --- |
 | `APP_ENV` | Runtime environment label | `development` |
 | `BOT_MODE` | Initial trading mode | `SIGNAL_ONLY` |
-| `LIVE_TRADING_ENABLED` | Hard live trading kill switch | `false` |
-| `MT5_LOGIN` | MT5 account number | `12345678` |
-| `MT5_PASSWORD` | MT5 password | keep secret |
-| `MT5_SERVER` | Broker server name | `JustMarkets-Demo3` |
-| `MT5_PATH` | Optional path to `terminal64.exe` | `C:\Program Files\MetaTrader 5\terminal64.exe` |
+| `MARKET_DATA_SOURCE` | Market data provider | `TRADINGVIEW` |
+| `TV_ENABLED` | Enable TradingView provider | `true` |
+| `TV_MCP_PATH` | TradingView MCP CLI command, JS file, or repo folder | `tv` |
+| `TV_DEBUG_PORT` | TradingView debug port | `9222` |
 | `DEEPSEEK_API_KEY` | DeepSeek API key | keep secret |
 | `DEEPSEEK_BASE_URL` | DeepSeek API base URL | `https://api.deepseek.com` |
 | `DEEPSEEK_MODEL` | DeepSeek model | `deepseek-chat` |
 | `TELEGRAM_BOT_TOKEN` | BotFather token | keep secret |
 | `TELEGRAM_ALLOWED_CHAT_ID` | Allowed Telegram chat ID | your chat ID |
+| `SIGNAL_BOT_TOKEN` | Separate bot token for channel signal broadcasts | keep secret |
+| `SIGNAL_CHANNEL_ID` | Telegram channel/chat ID for BUY/SELL setup broadcasts | `@your_channel` |
 | `SUPABASE_URL` | Supabase project URL | keep project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key | keep secret |
-| `DEFAULT_SYMBOL` | Single default symbol | `XAUUSD.c` |
-| `DEFAULT_SYMBOLS` | Comma-separated symbols for loop | `XAUUSD.c,EURUSD.c,GBPJPY.c,GBPUSD.c` |
+| `DEFAULT_SYMBOL` | Single default TradingView symbol | `OANDA:XAUUSD` |
+| `DEFAULT_SYMBOLS` | Comma-separated TradingView symbols for loop | `OANDA:XAUUSD,OANDA:EURUSD,OANDA:GBPUSD` |
 | `RISK_PROFILE` | Risk profile | `LOW`, `MEDIUM`, or `HIGH` |
 | `STRATEGY_MODE` | Strategy thinking mode (`SMC_AI` or `AI_ONLY`) | `SMC_AI` |
 | `RISK_PER_TRADE_PERCENT` | Account risk per trade | `0.5` |
@@ -210,54 +209,45 @@ API runs on `http://localhost:8000`.
 | `MIN_CONFIDENCE` | Legacy/base confidence config | `0.65` |
 | `MIN_RISK_REWARD` | Legacy/base risk reward config | `1.5` |
 | `MAX_SPREAD_POINTS` | Legacy spread config, not used as decision blocker | `35` |
-| `TRADING_LOOP_INTERVAL_SECONDS` | Loop interval | `300` |
+| `TRADING_LOOP_INTERVAL_SECONDS` | Loop interval | `900` |
+| `DAYTRADE_TIMEFRAMES` | Analysis timeframes | `D1,H4,H1,M15,M5` |
 
-## Broker Symbol Notes
+## TradingView Symbol Notes
 
-Set symbols exactly as your broker exposes them. JustMarkets demo commonly uses `.c` suffixes:
+Set symbols in TradingView format:
 
 ```env
-DEFAULT_SYMBOL=XAUUSD.c
-DEFAULT_SYMBOLS=XAUUSD.c,EURUSD.c,GBPJPY.c,GBPUSD.c
+DEFAULT_SYMBOL=OANDA:XAUUSD
+DEFAULT_SYMBOLS=OANDA:XAUUSD,OANDA:EURUSD,OANDA:GBPUSD,OANDA:GBPJPY,NASDAQ:NDX,SP:SPX,BITSTAMP:BTCUSD
 ```
 
-Wrong suffixes cause symbol selection failures.
+Broker suffixes such as `.c`, `.m`, and `.std` are not used by default.
 
-## MT5 Safety Checklist
+## Signal-Only Safety
 
-- Use demo account first.
-- Confirm MT5 terminal is running.
-- Confirm account is logged in.
-- Enable Algo Trading in MT5 only when you intend to test execution.
-- After switching accounts, MT5 may disable automated trading. Re-enable it manually.
-- Keep `LIVE_TRADING_ENABLED=false` for normal development.
-- Use `SIGNAL_ONLY` or `SEMI_AUTO` before `AUTO_DEMO`.
+- TradingView mode never executes orders.
+- Telegram approve, close-all, position, and auto-execution controls are hidden or disabled.
+- Keep `BOT_MODE=SIGNAL_ONLY` for default operation.
+- Treat all BUY/SELL output as research signals, not financial advice.
 
-## Risk Manager Gates
+## Signal Quality Gates
 
-Every BUY/SELL must pass these checks:
+Every BUY/SELL signal must pass these checks:
 
 - Decision is not HOLD.
 - Confidence meets active profile threshold.
-- No opposite open position on same symbol.
 - D1 major trend allows the direction.
 - D1 ranging has breakout and retest confirmation.
-- Position count does not exceed cap, except same-direction add-ons.
-- Daily drawdown stays below max drawdown.
 - Stop loss is provided.
 - Take profit is provided.
 - Trade parameters are valid for BUY/SELL price logic.
-- AI explicitly allows execution.
-- `LIVE_AUTO` requires `LIVE_TRADING_ENABLED=true`.
+- AI explicitly allows the signal.
 
 AI controls SL/TP placement. Risk manager does not reject because SL is wide, SL is tight, or R:R is below fixed profile values.
 
 ## Position Sizing
 
-- Lot size uses balance or equity and `RISK_PER_TRADE_PERCENT`.
-- Broker min/max/step constraints are respected.
-- If calculated lot is below broker minimum, executor uses broker minimum and logs warning.
-- Telegram settings cap risk/trade presets at 1%.
+Position sizing is inactive in TradingView signal-only mode. SL/TP and R:R are still included in signal output when AI returns them.
 
 ## Telegram Bot
 
@@ -267,26 +257,24 @@ Main commands:
 | --- | --- |
 | `/start` | Show welcome and controls |
 | `/menu` | Open inline control menu |
-| `/status` | Show bot/account/trading status |
+| `/status` | Show bot status and TradingView source |
 | `/settings` | Show current settings and risk controls |
-| `/positions` | Show all open positions plus P&L summary |
 | `/pause` | Pause trading loop |
 | `/resume` | Resume trading loop |
 | `/mode_signal` | Switch to signal-only mode |
-| `/mode_semi` | Switch to semi-auto mode |
-| `/mode_demo_auto` | Switch to demo auto mode |
-| `/close_all` | Confirm close all positions |
 | `/last_signal` | Show latest AI decision |
 
 Inline menu supports:
 
-- Mode controls.
 - Pause/resume.
-- Position view and close-all confirmation.
 - Risk profile controls: Low, Medium, High.
-- Risk/trade controls: 0.25%, 0.5%, 1%.
 - Symbol controls: all pairs or next pair.
-- Manual signal generation and approvals in semi-auto mode.
+- Manual signal generation.
+- Strategy mode toggle: SMC+AI or AI Only.
+
+In TradingView mode, execution controls are hidden or disabled: positions, close-all, approve/reject, and Signal/Semi/Auto mode buttons.
+
+Approved BUY/SELL setups include a TradingView chart screenshot when MCP screenshot capture is available. If the screenshot fails, Telegram falls back to a text signal. HOLD updates are not broadcast to the signal channel.
 
 ## API Endpoints
 
@@ -304,7 +292,7 @@ Controls:
 | `POST` | `/pause` | Pause trading |
 | `POST` | `/resume` | Resume trading |
 | `POST` | `/mode` | Change bot mode |
-| `POST` | `/close-all` | Close open positions |
+| `POST` | `/close-all` | Disabled in TradingView mode |
 
 Signals and trades:
 
@@ -312,7 +300,7 @@ Signals and trades:
 | --- | --- | --- |
 | `GET` | `/last-signal` | Latest AI decision |
 | `POST` | `/generate-signal` | Trigger manual signal |
-| `POST` | `/approve/{decision_id}` | Approve pending decision |
+| `POST` | `/approve/{decision_id}` | Disabled in TradingView mode |
 | `POST` | `/reject/{decision_id}` | Reject pending decision |
 | `GET` | `/trades` | Trade history |
 | `GET` | `/trades/{trade_id}` | Trade detail |
@@ -362,56 +350,49 @@ pytest tests/test_telegram_bot.py -v
 Latest verified result before publishing:
 
 ```text
-113 passed, 2 warnings
+179 passed, 2 warnings
 ```
 
 Warnings are Supabase client deprecation warnings for timeout/verify configuration.
 
 ## Development Notes
 
-- `.env`, logs, caches, and local MT5 probe scripts are intentionally ignored by git.
+- `.env`, logs, and caches are intentionally ignored by git.
 - Do not commit credentials, account numbers, Telegram tokens, or Supabase service role keys.
 - `logs/` can contain full Telegram request URLs with bot tokens. Keep it ignored.
-- Root-level local probe scripts that send MT5 orders should stay local and untracked.
-- Use tests before behavior changes. Risk and execution behavior should be covered by pytest.
+- Use tests before behavior changes. Signal and risk behavior should be covered by pytest.
 
 ## Troubleshooting
 
-MT5 not connected:
+TradingView MCP unavailable:
 
-- Start MT5 terminal.
-- Log in to correct demo account.
-- Verify `MT5_LOGIN`, `MT5_PASSWORD`, `MT5_SERVER`, and optional `MT5_PATH`.
+- Verify `TV_ENABLED=true`.
+- Verify `TV_MCP_PATH` points to `tv`, `src/cli/index.js`, or the cloned `tradingview-mcp` repo folder.
+- Check logs for the exact MCP command/output error.
 
-Symbol selection fails:
+Symbol data unavailable:
 
-- Check broker suffix.
-- Open Market Watch in MT5.
-- Add symbol manually.
+- Check TradingView symbol format, for example `OANDA:XAUUSD`.
+- Confirm the exchange prefix exists on TradingView.
 - Update `DEFAULT_SYMBOLS`.
 
-Order rejected with AutoTrading disabled:
+No signals generated:
 
-- Enable Algo Trading toolbar button.
-- Check MT5 Tools > Options > Expert Advisors > Allow Automated Trading.
-- Re-enable after account switch.
+- Check `TRADING_LOOP_INTERVAL_SECONDS`.
+- Check noise filter logs.
+- Verify DeepSeek credentials.
 
-Unsupported filling mode:
+Execution disabled:
 
-- Broker-specific. JustMarkets `.c` symbols were tested with `ORDER_FILLING_FOK`.
-
-Invalid stops or invalid price:
-
-- Broker can enforce dynamic stop constraints.
-- Executor refreshes ticks and widens stops on retry where supported.
+- Expected in TradingView mode. This project sends signals only.
 
 ## Security
 
 - Rotate any token accidentally written to `.env.example` or logs.
 - Keep Supabase service role key server-side only.
 - Restrict Telegram access with `TELEGRAM_ALLOWED_CHAT_ID`.
-- Treat MT5 credentials as high-risk secrets.
+- Treat DeepSeek, Telegram, Supabase, and TradingView credentials as high-risk secrets.
 
 ## Disclaimer
 
-This software is not financial advice. No profit is guaranteed. You are responsible for all trades, settings, broker behavior, live account access, and losses. Use demo mode first.
+This software is not financial advice. No profit is guaranteed. You are responsible for all decisions, settings, account access, and losses.

@@ -6,7 +6,6 @@ from telegram.ext import CallbackQueryHandler, ContextTypes
 
 from app.config import settings
 from app.logger import logger
-from app.mt5_connector.positions import get_today_realized_pnl
 from app.telegram_bot.bot import _pending_decisions, get_trading_loop, send_main_menu, send_message
 from app.telegram_bot.message_templates import build_main_menu_keyboard, build_settings_keyboard, format_settings_message
 
@@ -271,6 +270,11 @@ async def close_all_confirm_callback(update: Update, context: ContextTypes.DEFAU
         await query.answer("Unauthorized", show_alert=True)
         return
 
+    if settings.is_tradingview_mode:
+        await query.answer("Execution disabled", show_alert=True)
+        await _edit_message(update, "<b>Execution disabled in TradingView signal-only mode.</b>")
+        return
+
     await query.answer("Closing all positions...")
 
     from app.mt5_connector.connection import is_mt5_connected
@@ -312,11 +316,7 @@ async def menu_status_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     await query.answer()
-    from app.mt5_connector.connection import is_mt5_connected
-    from app.mt5_connector.account import get_balance, get_equity, get_daily_drawdown_percent
-    from app.mt5_connector.positions import get_open_positions_count
-
-    mt5_ok = is_mt5_connected()
+    mt5_ok = False
     paused = False
     mode = settings.bot_mode
     trading_loop = get_trading_loop()
@@ -329,7 +329,17 @@ async def menu_status_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
     lines = ["<b>\U0001f4ca Bot Status</b>\n"]
     lines.append(f"<b>Mode:</b> {mode} | {'\u23f8\ufe0f Paused' if paused else '\u25b6\ufe0f Running'}")
+    lines.append(f"<b>Data:</b> {settings.market_data_source.upper()}")
+    lines.append(f"<b>Execution:</b> {'disabled' if settings.is_tradingview_mode else 'enabled'}")
     lines.append(f"<b>Symbol:</b> {settings.default_symbol}")
+    if settings.is_tradingview_mode:
+        lines.append("\n<b>Signal-only TradingView mode</b>")
+    else:
+        from app.mt5_connector.connection import is_mt5_connected
+        from app.mt5_connector.account import get_balance, get_equity, get_daily_drawdown_percent
+        from app.mt5_connector.positions import get_open_positions_count
+
+        mt5_ok = is_mt5_connected()
     if mt5_ok:
         balance = get_balance()
         equity = get_equity()
@@ -339,7 +349,7 @@ async def menu_status_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         lines.append(f"<b>Equity:</b> ${equity:,.2f}" if equity else "<b>Equity:</b> N/A")
         lines.append(f"<b>Daily DD:</b> {dd:.2f}%" if dd else "<b>Daily DD:</b> N/A")
         lines.append(f"<b>Open Positions:</b> {positions}")
-    else:
+    elif not settings.is_tradingview_mode:
         lines.append("\n\u26a0\ufe0f <b>MT5 not connected</b>")
 
     await _edit_message(update, "\n".join(lines), reply_markup=build_main_menu_keyboard(is_paused=paused, mode=mode))
@@ -355,8 +365,12 @@ async def menu_positions_callback(update: Update, context: ContextTypes.DEFAULT_
         return
 
     await query.answer()
+    if settings.is_tradingview_mode:
+        await _edit_message(update, "<b>\u2139\ufe0f Positions unavailable in TradingView signal-only mode.</b>", reply_markup=build_main_menu_keyboard())
+        return
+
     from app.mt5_connector.connection import is_mt5_connected
-    from app.mt5_connector.positions import get_open_positions
+    from app.mt5_connector.positions import get_open_positions, get_today_realized_pnl
 
     if not is_mt5_connected():
         await _edit_message(update, "<b>\u26a0\ufe0f MT5 not connected</b>", reply_markup=build_main_menu_keyboard())
@@ -481,7 +495,7 @@ async def menu_close_all_callback(update: Update, context: ContextTypes.DEFAULT_
 
     await query.answer()
     from app.mt5_connector.connection import is_mt5_connected
-    from app.mt5_connector.positions import get_open_positions
+    from app.mt5_connector.positions import get_open_positions, get_today_realized_pnl
 
     if not is_mt5_connected():
         await _edit_message(update, "<b>\u26a0\ufe0f MT5 not connected</b>", reply_markup=build_main_menu_keyboard())

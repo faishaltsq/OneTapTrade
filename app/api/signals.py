@@ -6,7 +6,6 @@ from fastapi import APIRouter, HTTPException, Request
 from app.logger import logger
 from app.config import settings
 from app.database.repositories import get_latest_decision
-from app.mt5_connector.connection import is_mt5_connected
 
 router = APIRouter(prefix="")
 
@@ -51,87 +50,22 @@ async def get_last_signal(request: Request):
 
 @router.post("/generate-signal")
 async def generate_signal(request: Request):
-    if not is_mt5_connected():
-        raise HTTPException(status_code=503, detail="MT5 not connected")
-
     loop = request.app.state.trading_loop
     symbol = loop.symbol if loop else settings.default_symbol
 
     try:
-        from app.mt5_connector.market_data import get_candles, get_latest_tick, get_spread, get_symbol_info
-        from app.mt5_connector.account import get_balance, get_equity, get_daily_drawdown_percent
-        from app.mt5_connector.positions import get_open_positions_count
-        from app.analysis.feature_builder import build_market_payload
-        from app.ai_engine.deepseek_client import get_ai_decision
         from app.ai_engine.decision_parser import format_decision_for_telegram
+        from app.services.signal_service import generate_signal as generate_signal_result
 
-        tick = get_latest_tick(symbol)
-        if tick is None:
-            raise HTTPException(status_code=503, detail="Cannot fetch market tick data")
+        result = generate_signal_result(symbol)
+        if "error" in result:
+            raise HTTPException(status_code=503, detail=result["error"])
 
-        bid = tick.get("bid", 0.0)
-        ask = tick.get("ask", 0.0)
-        spread_points = int(get_spread(symbol) or 0)
-        symbol_info = get_symbol_info(symbol) or {}
-
-        df_d1 = get_candles(symbol, "D1", 50)
-        df_h4 = get_candles(symbol, "H4", 100)
-        df_h1 = get_candles(symbol, "H1", 100)
-        df_m15 = get_candles(symbol, "M5", 100)
-
-        account_info = {
-            "balance": get_balance(),
-            "equity": get_equity(),
-            "daily_drawdown_percent": get_daily_drawdown_percent(),
-            "open_positions_count": get_open_positions_count(symbol),
-        }
-
-        market_payload = build_market_payload(
-            symbol=symbol,
-            df_d1=df_d1,
-            df_h4=df_h4,
-            df_h1=df_h1,
-            df_m15=df_m15,
-            bid=bid,
-            ask=ask,
-            spread_points=spread_points,
-            account_info=account_info,
-        )
-        market_payload.setdefault("risk_config", {})["point"] = symbol_info.get("point", 0.01)
-
-        ai_decision = get_ai_decision(market_payload)
-
-        from app.risk.risk_manager import evaluate_decision
-
-        market_context = {
-            "symbol": symbol,
-            "current_bid": bid,
-            "current_ask": ask,
-            "spread_points": spread_points,
-            "open_positions_count": account_info.get("open_positions_count", 0),
-            "daily_drawdown_percent": account_info.get("daily_drawdown_percent", 0.0) or 0.0,
-            "mode": settings.bot_mode,
-            "point": symbol_info.get("point", 0.01),
-        }
-        risk_result = evaluate_decision(ai_decision, market_context)
+        ai_decision = result["ai_decision"]
+        risk_result = result.get("risk_result", {})
 
         formatted = format_decision_for_telegram(ai_decision, risk_result)
-
-        from app.database.repositories import save_ai_decision, save_risk_check
-        from app.ai_engine.decision_parser import format_decision_for_db
-
-        decision_data = format_decision_for_db(ai_decision)
-        saved_decision = save_ai_decision(decision_data)
-
-        decision_id = ""
-        if saved_decision:
-            decision_id = saved_decision.get("id", "")
-            save_risk_check(
-                ai_decision_id=decision_id,
-                approved=risk_result.get("approved", False),
-                reason=risk_result.get("reason", "Unknown"),
-                checks=risk_result.get("checks", {}),
-            )
+        decision_id = result.get("decision_id") or ""
 
         return {
             "signal": {
@@ -163,6 +97,9 @@ async def generate_signal(request: Request):
 
 @router.post("/approve/{decision_id}")
 async def approve_signal(request: Request, decision_id: str):
+    if settings.is_tradingview_mode:
+        raise HTTPException(status_code=400, detail="Execution disabled in TradingView signal-only mode")
+
     from app.telegram_bot.bot import _pending_decisions, _trading_loop_ref
 
     if decision_id not in _pending_decisions:

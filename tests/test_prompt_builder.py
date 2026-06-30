@@ -68,7 +68,7 @@ def test_prompt_does_not_hardcode_sl_or_rr_constraints():
         settings.risk_profile = original_profile
 
 
-def test_system_prompt_includes_d1_and_position_lock_rules():
+def test_system_prompt_includes_d1_and_signal_only_rules():
     from app.ai_engine.prompt_builder import build_system_prompt
 
     prompt = build_system_prompt()
@@ -77,8 +77,8 @@ def test_system_prompt_includes_d1_and_position_lock_rules():
     assert "D1_BULLISH" in prompt and "only BUY" in prompt
     assert "D1_BEARISH" in prompt and "only SELL" in prompt
     assert "D1_RANGING" in prompt and "breakout + retest" in prompt
-    assert "Same-direction add-ons are allowed" in prompt
-    assert "Opposite direction is blocked" in prompt
+    assert "This system does not execute orders" in prompt
+    assert "research signals" in prompt
 
 
 def test_system_prompt_uses_ema50_ema200_and_rsi_25_75_thresholds():
