@@ -327,6 +327,14 @@ TradingView cloud alerts tidak bisa memanggil `localhost` langsung. Untuk alert 
 C:\Users\cubeb\OneDrive\Documents\projects\tradingview-mcp
 ```
 
+MCP TradingView dibungkus dengan `caveman-shrink`:
+
+```text
+npx -y caveman-shrink node C:/Users/cubeb/OneDrive/Documents/projects/tradingview-mcp/src/server.js
+```
+
+`caveman-shrink` adalah MCP proxy yang mengompresi field prose seperti `description` agar daftar tools lebih hemat token, tanpa mengubah request atau response tool TradingView.
+
 Setelah mengubah `opencode.json`, restart OpenCode agar MCP tools masuk ke session. Runtime FastAPI tetap bisa memakai TradingView MCP melalui CLI walaupun OpenCode belum direstart.
 
 ## Testing
