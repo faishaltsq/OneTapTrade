@@ -1,15 +1,6 @@
-import os
 from typing import Optional
 
 from pydantic_settings import BaseSettings
-
-
-def _env_fallback(key: str, fallback_keys: list[str]) -> Optional[str]:
-    for fb in fallback_keys:
-        value = os.environ.get(fb)
-        if value:
-            return value
-    return None
 
 
 class Settings(BaseSettings):
@@ -76,19 +67,7 @@ class Settings(BaseSettings):
 
     @property
     def ai_enabled(self) -> bool:
-        return bool(self.ai_api_key or os.environ.get("DEEPSEEK_API_KEY"))
-
-    @property
-    def effective_ai_api_key(self) -> Optional[str]:
-        return self.ai_api_key or os.environ.get("DEEPSEEK_API_KEY")
-
-    @property
-    def effective_ai_base_url(self) -> str:
-        return os.environ.get("DEEPSEEK_BASE_URL") or self.ai_base_url
-
-    @property
-    def effective_ai_model(self) -> str:
-        return os.environ.get("DEEPSEEK_MODEL") or self.ai_model
+        return bool(self.ai_api_key)
 
     @property
     def symbols(self) -> list[str]:
