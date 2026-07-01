@@ -8,6 +8,8 @@ def test_settings_defaults_are_signal_only():
     assert settings.app_name == "OneTapTrade"
     assert settings.default_symbol == "XAUUSD"
     assert settings.symbols
+    assert settings.tradingview_smc_study_filter == "Smart Money"
+    assert settings.tradingview_ema_bar_count == 250
     assert settings.capture_chart_on_signal is True
     assert settings.ai_base_url == "https://api.deepseek.com"
     assert settings.ai_model == "deepseek-v4-pro"

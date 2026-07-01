@@ -249,6 +249,13 @@ async def get_chart_context(
 
     if include_indicators:
         context["indicator_values"] = await run_tv_command("values")
+        if settings.tradingview_ema_bar_count > 0:
+            context["ohlcv_bars"] = await run_tv_command("ohlcv", "--count", str(settings.tradingview_ema_bar_count))
+        if settings.tradingview_smc_study_filter:
+            smc_filter = settings.tradingview_smc_study_filter
+            context["smc_lines"] = await run_tv_command("data", "lines", "-f", smc_filter)
+            context["smc_labels"] = await run_tv_command("data", "labels", "-f", smc_filter)
+            context["smc_boxes"] = await run_tv_command("data", "boxes", "-f", smc_filter)
 
     if include_screenshot:
         context["screenshot"] = await run_tv_command("screenshot", "-r", "chart")

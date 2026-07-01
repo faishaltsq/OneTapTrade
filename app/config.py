@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     tradingview_mcp_timeout_seconds: int = 30
     tradingview_app_path: Optional[str] = None
     tradingview_cdp_port: int = 9222
+    tradingview_smc_study_filter: str = "Smart Money"
+    tradingview_ema_bar_count: int = 250
     auto_launch_tradingview_on_startup: bool = True
     capture_chart_on_signal: bool = True
 

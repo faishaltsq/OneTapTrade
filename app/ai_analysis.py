@@ -30,6 +30,8 @@ DAYTRADE_PLAYBOOK = """FOREX DAY-TRADE METHOD:
 - Entry quality: BUY/SELL only when there is a defensible trigger around current price or a precise LIMIT area. If entry is late, chasing, inside chop, or far from invalidation, choose WAIT.
 - Liquidity and structure: identify recent swing highs/lows, breakout levels, failed breaks, support/resistance, supply/demand, and stop-loss liquidity when available from chart context.
 - Momentum/volatility: use OHLCV summary and indicator_values when present. Avoid trades when volatility is too compressed, candles are indecisive, or momentum conflicts with the bias.
+- EMA filter: use EMA 50/200 when available. Prefer BUY when price and EMA 50 are above EMA 200; prefer SELL when price and EMA 50 are below EMA 200. If EMA data conflicts with SMC structure, reduce confidence or choose WAIT.
+- SMC confluence: use Smart Money Concepts data when available: BOS, CHoCH, EQH/EQL, order-block/supply-demand boxes, and nearby horizontal levels. Do not buy directly into nearby bearish liquidity/resistance or sell directly into nearby bullish liquidity/support.
 - Session awareness: prefer London, New York, or London-New York overlap behavior. If session/news context is unavailable, do not invent it; reduce confidence or choose WAIT.
 - Risk quality: for BUY/SELL, SL must sit beyond invalidation structure, not an arbitrary fixed distance. TP1 should target the nearest realistic level; TP2 should target the next structure/liquidity area.
 - Minimum quality gate: only output BUY/SELL when confidence is at least {min_confidence}% and expected reward:risk is at least 1:{min_rr}. Otherwise output WAIT.
@@ -55,8 +57,16 @@ def _percent_float(value: Any) -> float:
 def _float_value(value: Any) -> float | None:
     if value in (None, ""):
         return None
+    text = str(value).strip().replace(" ", "").replace("%", "")
+    if "," in text and "." not in text:
+        text = text.replace(",", ".")
+    elif "," in text and "." in text:
+        if text.rfind(",") > text.rfind("."):
+            text = text.replace(".", "").replace(",", ".")
+        else:
+            text = text.replace(",", "")
     try:
-        return float(str(value).replace(",", ""))
+        return float(text)
     except ValueError:
         return None
 
@@ -78,6 +88,210 @@ def _format_price(value: float | None, reference: float | None = None) -> str:
     return f"{value:.{precision}f}"
 
 
+def _studies_from(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, dict) and isinstance(payload.get("studies"), list):
+        return [study for study in payload["studies"] if isinstance(study, dict)]
+    if isinstance(payload, list):
+        return [study for study in payload if isinstance(study, dict)]
+    return []
+
+
+def _current_price_from_context(context: dict[str, Any], signal: dict[str, Any] | None = None) -> float | None:
+    signal = signal or {}
+    quote = context.get("quote") or {}
+    return _float_value(signal.get("price") or signal.get("entry") or quote.get("last") or quote.get("close"))
+
+
+def _numeric_values(values: Any) -> dict[str, float | str]:
+    if not isinstance(values, dict):
+        return {}
+    result: dict[str, float | str] = {}
+    for key, value in values.items():
+        parsed = _float_value(value)
+        result[str(key)] = parsed if parsed is not None else str(value)
+    return result
+
+
+def _close_prices_from_ohlcv(ohlcv_bars: Any) -> list[float]:
+    bars = ohlcv_bars.get("bars") if isinstance(ohlcv_bars, dict) else ohlcv_bars
+    if not isinstance(bars, list):
+        return []
+    closes: list[float] = []
+    for bar in bars:
+        if not isinstance(bar, dict):
+            continue
+        close = _float_value(bar.get("close"))
+        if close is not None:
+            closes.append(close)
+    return closes
+
+
+def _ema_from_closes(closes: list[float], period: int) -> float | None:
+    if len(closes) < period:
+        return None
+    ema = sum(closes[:period]) / period
+    multiplier = 2 / (period + 1)
+    for close in closes[period:]:
+        ema = (close - ema) * multiplier + ema
+    return ema
+
+
+def _ema_context(indicator_values: Any, current_price: float | None, ohlcv_bars: Any = None) -> dict[str, Any]:
+    ema_studies: list[dict[str, Any]] = []
+    ema_50: float | None = None
+    ema_200: float | None = None
+    closes = _close_prices_from_ohlcv(ohlcv_bars)
+    computed_ema_50 = _ema_from_closes(closes, 50)
+    computed_ema_200 = _ema_from_closes(closes, 200)
+
+    for study in _studies_from(indicator_values):
+        name = str(study.get("name") or "")
+        lowered = name.lower()
+        if "ema" not in lowered and "exponential" not in lowered and "moving average" not in lowered:
+            continue
+
+        values = _numeric_values(study.get("values"))
+        if values:
+            ema_studies.append({"name": name, "values": values})
+
+        for title, value in values.items():
+            if not isinstance(value, (int, float)):
+                continue
+            title_key = str(title).lower().replace("_", " ")
+            fallback_key = f"{name} {title}".lower().replace("_", " ")
+            if "50" in title_key and ema_50 is None:
+                ema_50 = float(value)
+            elif "200" in title_key and ema_200 is None:
+                ema_200 = float(value)
+            elif "50" in fallback_key and "200" not in fallback_key and ema_50 is None:
+                ema_50 = float(value)
+            elif "200" in fallback_key and "50" not in fallback_key and ema_200 is None:
+                ema_200 = float(value)
+
+    if computed_ema_50 is not None:
+        ema_50 = computed_ema_50
+    if computed_ema_200 is not None:
+        ema_200 = computed_ema_200
+
+    bias = "unknown"
+    if current_price is not None and ema_50 is not None and ema_200 is not None:
+        if current_price > ema_50 > ema_200:
+            bias = "bullish"
+        elif current_price < ema_50 < ema_200:
+            bias = "bearish"
+        else:
+            bias = "mixed"
+    elif current_price is not None and ema_studies:
+        first_value = next(
+            (value for study in ema_studies for value in study["values"].values() if isinstance(value, (int, float))),
+            None,
+        )
+        if first_value is not None:
+            bias = "bullish" if current_price > float(first_value) else "bearish"
+
+    return {
+        "bias": bias,
+        "ema_50": ema_50,
+        "ema_200": ema_200,
+        "computed_from_ohlcv": {
+            "bar_count": len(closes),
+            "ema_50": computed_ema_50,
+            "ema_200": computed_ema_200,
+        },
+        "available_studies": ema_studies[:5],
+    }
+
+
+def _nearest_levels(levels: list[float], current_price: float | None, limit: int = 6) -> dict[str, list[float]]:
+    unique_levels = sorted(set(levels))
+    if current_price is None:
+        return {"above": unique_levels[-limit:], "below": unique_levels[:limit]}
+
+    above = sorted([level for level in unique_levels if level >= current_price])[:limit]
+    below = sorted([level for level in unique_levels if level < current_price], reverse=True)[:limit]
+    return {"above": above, "below": below}
+
+
+def _nearest_zones(zones: list[dict[str, Any]], current_price: float | None, limit: int = 5) -> list[dict[str, float]]:
+    parsed_zones: list[dict[str, float]] = []
+    for zone in zones:
+        high = _float_value(zone.get("high"))
+        low = _float_value(zone.get("low"))
+        if high is None or low is None:
+            continue
+        parsed_zones.append({"high": max(high, low), "low": min(high, low)})
+
+    if current_price is None:
+        return parsed_zones[:limit]
+
+    return sorted(
+        parsed_zones,
+        key=lambda zone: 0
+        if zone["low"] <= current_price <= zone["high"]
+        else min(abs(zone["high"] - current_price), abs(zone["low"] - current_price)),
+    )[:limit]
+
+
+def extract_daytrade_indicator_context(context: dict[str, Any], signal: dict[str, Any] | None = None) -> dict[str, Any]:
+    current_price = _current_price_from_context(context, signal)
+    indicator_values = context.get("indicator_values")
+
+    smc_levels: list[float] = []
+    for study in _studies_from(context.get("smc_lines")):
+        for level in study.get("horizontal_levels") or []:
+            parsed = _float_value(level)
+            if parsed is not None:
+                smc_levels.append(parsed)
+
+    smc_labels: list[dict[str, Any]] = []
+    for study in _studies_from(context.get("smc_labels")):
+        for label in study.get("labels") or []:
+            if isinstance(label, dict):
+                smc_labels.append({"text": label.get("text"), "price": _float_value(label.get("price"))})
+
+    smc_zones: list[dict[str, Any]] = []
+    for study in _studies_from(context.get("smc_boxes")):
+        smc_zones.extend([zone for zone in study.get("zones") or [] if isinstance(zone, dict)])
+
+    return {
+        "current_price": current_price,
+        "ema": _ema_context(indicator_values, current_price, context.get("ohlcv_bars")),
+        "smc": {
+            "nearest_levels": _nearest_levels(smc_levels, current_price),
+            "recent_labels": smc_labels[-12:],
+            "nearest_zones": _nearest_zones(smc_zones, current_price),
+        },
+    }
+
+
+def _fallback_indicator_reason(indicator_context: dict[str, Any]) -> str:
+    parts: list[str] = []
+    ema = indicator_context.get("ema") or {}
+    ema_bias = ema.get("bias")
+    if ema_bias and ema_bias != "unknown":
+        ema_50 = ema.get("ema_50")
+        ema_200 = ema.get("ema_200")
+        if ema_50 is not None and ema_200 is not None:
+            parts.append(f"EMA 50/200 bias {ema_bias} ({_format_price(ema_50)}, {_format_price(ema_200)})")
+        else:
+            parts.append(f"EMA chart bias {ema_bias}")
+
+    smc = indicator_context.get("smc") or {}
+    recent_labels = [label for label in smc.get("recent_labels") or [] if label.get("text")]
+    if recent_labels:
+        labels_text = ", ".join(
+            f"{label.get('text')} @{_format_price(label.get('price'))}" for label in recent_labels[-3:]
+        )
+        parts.append(f"SMC recent {labels_text}")
+
+    nearest_zones = smc.get("nearest_zones") or []
+    if nearest_zones:
+        zone = nearest_zones[0]
+        parts.append(f"zona SMC terdekat {_format_price(zone.get('low'))}-{_format_price(zone.get('high'))}")
+
+    return "; ".join(parts)
+
+
 def build_chart_analysis_prompt(context: dict[str, Any], signal: dict[str, Any] | None = None) -> str:
     compact_context = {
         "signal": signal,
@@ -87,6 +301,7 @@ def build_chart_analysis_prompt(context: dict[str, Any], signal: dict[str, Any] 
             "quote": context.get("quote"),
             "ohlcv_summary": context.get("ohlcv_summary"),
             "indicator_values": context.get("indicator_values"),
+            "daytrade_indicators": extract_daytrade_indicator_context(context, signal),
         },
     }
     return (
@@ -110,6 +325,8 @@ def fallback_signal_message(context: dict[str, Any], signal: dict[str, Any] | No
     state = context.get("state") or {}
     quote = context.get("quote") or {}
     summary = context.get("ohlcv_summary") or {}
+    indicator_context = extract_daytrade_indicator_context(context, signal)
+    indicator_reason = _fallback_indicator_reason(indicator_context)
 
     pair = _safe_value(signal.get("symbol") or state.get("symbol") or quote.get("symbol") or settings.default_symbol)
     action = str(signal.get("action") or signal.get("decision") or "WAIT").upper()
@@ -117,9 +334,14 @@ def fallback_signal_message(context: dict[str, Any], signal: dict[str, Any] | No
         action = "WAIT"
 
     change_pct = _percent_float(summary.get("change_pct"))
+    ema_bias = (indicator_context.get("ema") or {}).get("bias")
     if action == "BUY":
         bias = "Bullish"
     elif action == "SELL":
+        bias = "Bearish"
+    elif ema_bias == "bullish":
+        bias = "Bullish"
+    elif ema_bias == "bearish":
         bias = "Bearish"
     elif change_pct > 0.3:
         bias = "Bullish"
@@ -188,12 +410,16 @@ def fallback_signal_message(context: dict[str, Any], signal: dict[str, Any] | No
             f"Chart {pair} terbaca dari TradingView MCP di sekitar harga {_format_price(current_price_number, current_price_number)}; perubahan 100 bar sekitar {summary.get('change_pct', 'n/a')}. "
             "Belum ada entry yang cukup valid, jadi posisi terbaik adalah menunggu konfirmasi."
         )
+        if indicator_reason:
+            reason = f"{reason} Tambahan data indikator: {indicator_reason}."
         invalid = signal.get("invalid_if") or "WAIT batal jika muncul breakout/retest valid dengan struktur SL dan target yang jelas."
     else:
         reason = signal.get("message") or (
             f"Chart {pair} terbaca dari TradingView MCP; perubahan 100 bar sekitar {summary.get('change_pct', 'n/a')}. "
             "Level entry, SL, dan TP fallback dihitung dari range chart terakhir karena analisis AI tidak tersedia."
         )
+        if indicator_reason:
+            reason = f"{reason} Tambahan data indikator: {indicator_reason}."
         invalid = signal.get("invalid_if") or "Setup batal jika harga menembus SL atau struktur berbalik melawan bias setup."
 
     return (

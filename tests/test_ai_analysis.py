@@ -39,6 +39,85 @@ def test_fallback_buy_generates_concrete_levels():
     assert "Tentukan manual" not in message
 
 
+def test_daytrade_indicator_context_extracts_ema_and_smc():
+    from app.ai_analysis import extract_daytrade_indicator_context
+
+    context = {
+        "quote": {"last": "1,0875"},
+        "indicator_values": {
+            "success": True,
+            "studies": [
+                {
+                    "name": "EMA 50/200",
+                    "values": {"EMA 50": "1,0850", "EMA 200": "1,0800"},
+                }
+            ],
+        },
+        "smc_lines": {
+            "success": True,
+            "studies": [{"name": "Smart Money Concepts", "horizontal_levels": ["1,0900", "1,0830"]}],
+        },
+        "smc_labels": {
+            "success": True,
+            "studies": [{"name": "Smart Money Concepts", "labels": [{"text": "BOS", "price": "1,0860"}]}],
+        },
+        "smc_boxes": {
+            "success": True,
+            "studies": [{"name": "Smart Money Concepts", "zones": [{"high": "1,0890", "low": "1,0870"}]}],
+        },
+    }
+
+    result = extract_daytrade_indicator_context(context)
+
+    assert result["current_price"] == 1.0875
+    assert result["ema"]["bias"] == "bullish"
+    assert result["ema"]["ema_50"] == 1.085
+    assert result["ema"]["ema_200"] == 1.08
+    assert result["smc"]["nearest_levels"]["above"] == [1.09]
+    assert result["smc"]["nearest_levels"]["below"] == [1.083]
+    assert result["smc"]["recent_labels"][0]["text"] == "BOS"
+    assert result["smc"]["nearest_zones"][0] == {"high": 1.089, "low": 1.087}
+
+
+def test_daytrade_indicator_context_computes_ema_from_ohlcv():
+    from app.ai_analysis import extract_daytrade_indicator_context
+
+    bars = [{"close": float(index)} for index in range(1, 251)]
+    result = extract_daytrade_indicator_context({"quote": {"last": 250.0}, "ohlcv_bars": {"bars": bars}})
+
+    assert result["ema"]["computed_from_ohlcv"]["bar_count"] == 250
+    assert result["ema"]["computed_from_ohlcv"]["ema_50"] is not None
+    assert result["ema"]["computed_from_ohlcv"]["ema_200"] is not None
+    assert result["ema"]["ema_50"] > result["ema"]["ema_200"]
+    assert result["ema"]["bias"] == "bullish"
+
+
+def test_fallback_wait_mentions_ema_smc_confluence():
+    from app.ai_analysis import fallback_signal_message
+
+    message = fallback_signal_message(
+        {
+            "state": {"symbol": "OANDA:EURUSD"},
+            "quote": {"last": "1,0875"},
+            "ohlcv_summary": {"change_pct": "0.1%", "range": "0,0040"},
+            "indicator_values": {
+                "success": True,
+                "studies": [{"name": "EMA 50/200", "values": {"EMA 50": "1,0850", "EMA 200": "1,0800"}}],
+            },
+            "smc_labels": {
+                "success": True,
+                "studies": [{"name": "Smart Money Concepts", "labels": [{"text": "BOS", "price": "1,0860"}]}],
+            },
+        },
+        {"symbol": "OANDA:EURUSD", "action": "WAIT"},
+    )
+
+    assert "Bias: Bullish" in message
+    assert "Tambahan data indikator" in message
+    assert "EMA 50/200 bias bullish" in message
+    assert "SMC recent BOS" in message
+
+
 def test_prompt_uses_deepseek_forex_daytrade_method():
     from app.ai_analysis import build_chart_analysis_prompt
 
@@ -54,6 +133,8 @@ def test_prompt_uses_deepseek_forex_daytrade_method():
 
     assert "DeepSeek-powered forex_daytrade" in prompt
     assert "FOREX DAY-TRADE METHOD" in prompt
+    assert "EMA 50/200" in prompt
+    assert "Smart Money Concepts" in prompt
     assert "liquidity sweep" in prompt
     assert "expected reward:risk is at least 1:1.5" in prompt
     assert "confidence is at least 70%" in prompt

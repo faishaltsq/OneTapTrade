@@ -102,6 +102,8 @@ TRADINGVIEW_MCP_NODE=node
 TRADINGVIEW_MCP_TIMEOUT_SECONDS=30
 TRADINGVIEW_APP_PATH=C:\Program Files\WindowsApps\31178TradingViewInc.TradingView_3.2.0.0_x64__q4jpyh43s5mv6\TradingView.exe
 TRADINGVIEW_CDP_PORT=9222
+TRADINGVIEW_SMC_STUDY_FILTER=Smart Money
+TRADINGVIEW_EMA_BAR_COUNT=250
 AUTO_LAUNCH_TRADINGVIEW_ON_STARTUP=true
 CAPTURE_CHART_ON_SIGNAL=true
 
@@ -130,6 +132,9 @@ Catatan DeepSeek AI:
 - Webhook TradingView memakai DeepSeek otomatis jika `AI_ANALYSIS_ON_SIGNAL=true`.
 - `AI_TRADING_STYLE=forex_daytrade` mengaktifkan prompt khusus forex day-trade.
 - `AI_MIN_TRADE_CONFIDENCE=70` dan `AI_MIN_RR=1.5` membuat AI lebih selektif: jika setup tidak memenuhi kualitas minimum, output harus `WAIT`.
+- Jika chart punya EMA 50/200 dan SMC, TradingView MCP akan memakai `values` plus Pine `lines`, `labels`, dan `boxes` dari study yang cocok dengan `TRADINGVIEW_SMC_STUDY_FILTER`.
+- Setup chart saat ini terdeteksi punya `EMA 20/50/100/200` dan `Smart Money Concepts [LuxAlgo]`; data ini dipakai sebagai tambahan confluence day-trade.
+- EMA 50/200 juga dihitung langsung dari OHLCV TradingView memakai `TRADINGVIEW_EMA_BAR_COUNT`, jadi tetap tersedia walaupun indikator EMA protected hanya expose satu `Plot` di data window.
 - AI membantu meningkatkan selektivitas signal, tetapi tidak menjamin profit atau win-rate tertentu.
 
 ## Menjalankan Server
@@ -230,8 +235,11 @@ Jika AI tidak aktif atau gagal:
 Metode AI DeepSeek untuk forex day-trade:
 
 - Filter bias dari trend, market structure, support/resistance, dan kondisi momentum.
+- Gunakan EMA 50/200 sebagai trend filter: BUY lebih valid saat harga dan EMA 50 berada di atas EMA 200, SELL lebih valid saat harga dan EMA 50 berada di bawah EMA 200.
+- Gunakan SMC sebagai confluence: BOS, CHoCH, EQH/EQL, order-block/supply-demand boxes, dan level horizontal terdekat.
 - Cari entry continuation setelah pullback atau breakout-retest; reversal hanya jika ada liquidity sweep dan rejection yang jelas.
 - Hindari entry yang terlambat, chasing, sideways/chop, atau terlalu jauh dari invalidation.
+- Hindari BUY langsung ke liquidity/resistance bearish terdekat atau SELL langsung ke support/demand bullish terdekat.
 - SL harus berada di luar struktur invalidation, bukan jarak acak.
 - TP1 target level terdekat yang realistis; TP2 target struktur/liquidity berikutnya.
 - BUY/SELL hanya jika confidence minimal sesuai `AI_MIN_TRADE_CONFIDENCE` dan reward:risk minimal sesuai `AI_MIN_RR`; selain itu `WAIT`.
