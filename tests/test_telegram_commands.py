@@ -14,6 +14,18 @@ def test_help_command_lists_current_commands():
     assert "/positions" not in response
 
 
+def test_menu_reply_markup_has_all_command_buttons():
+    from app.telegram_bot.bot import menu_reply_markup
+
+    markup = menu_reply_markup()
+    callback_data = [button["callback_data"] for row in markup["inline_keyboard"] for button in row]
+
+    assert "cmd:status" in callback_data
+    assert "cmd:last_signal" in callback_data
+    assert "cmd:analyze" in callback_data
+    assert "cmd:help" in callback_data
+
+
 def test_last_signal_command_formats_latest_signal():
     from app.telegram_bot.bot import handle_command_text
 
@@ -161,6 +173,67 @@ def test_menu_alias_shows_help():
 
     assert "OneTapTrade Commands" in response
     assert "/analyze" in response
+
+
+def test_send_analysis_command_responses_sends_loading_first(monkeypatch):
+    from app.telegram_bot.bot import send_analysis_command_responses
+
+    sent_messages = []
+    chat_actions = []
+
+    async def fake_chat_action(action="typing", chat_id=None):
+        chat_actions.append((action, chat_id))
+        return True
+
+    async def fake_send_message(text, **kwargs):
+        sent_messages.append(text)
+        return True
+
+    async def fake_responses(text, app_state):
+        return [{"text": "⚪ OANDA:XAUUSD — WAIT\nConfidence: 35%", "photo_path": None}]
+
+    monkeypatch.setattr("app.telegram_bot.bot.send_chat_action", fake_chat_action)
+    monkeypatch.setattr("app.telegram_bot.bot.send_message", fake_send_message)
+    monkeypatch.setattr("app.telegram_bot.bot.build_analysis_responses", fake_responses)
+
+    asyncio.run(send_analysis_command_responses("/analyze OANDA:XAUUSD tf=60", SimpleNamespace(), "123"))
+
+    assert chat_actions == [("typing", "123")]
+    assert "Loading analyze" in sent_messages[0]
+    assert "OANDA:XAUUSD" in sent_messages[1]
+
+
+def test_callback_analyze_answers_and_runs_loading_flow(monkeypatch):
+    from app.config import settings
+    from app.telegram_bot.bot import handle_callback_query
+
+    answers = []
+    analyses = []
+    original_chat_id = settings.telegram_allowed_chat_id
+    try:
+        settings.telegram_allowed_chat_id = "123"
+
+        async def fake_answer(callback_query_id, text=None):
+            answers.append((callback_query_id, text))
+            return True
+
+        async def fake_send_analysis(text, app_state, chat_id):
+            analyses.append((text, chat_id))
+
+        monkeypatch.setattr("app.telegram_bot.bot.answer_callback_query", fake_answer)
+        monkeypatch.setattr("app.telegram_bot.bot.send_analysis_command_responses", fake_send_analysis)
+
+        callback = {
+            "id": "cb-1",
+            "data": "cmd:analyze",
+            "message": {"chat": {"id": "123"}},
+        }
+        asyncio.run(handle_callback_query(callback, SimpleNamespace()))
+    finally:
+        settings.telegram_allowed_chat_id = original_chat_id
+
+    assert answers == [("cb-1", "Loading analyze...")]
+    assert analyses == [("/analyze", "123")]
 
 
 def test_auto_signal_filter_uses_action_and_confidence():

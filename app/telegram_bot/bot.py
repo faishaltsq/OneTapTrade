@@ -1,5 +1,6 @@
 import asyncio
 import html
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -16,6 +17,13 @@ BOT_COMMANDS = [
     {"command": "analyze", "description": "Analyze configured pairs"},
     {"command": "help", "description": "Show command list"},
 ]
+
+CALLBACK_COMMANDS = {
+    "cmd:status": "/status",
+    "cmd:last_signal": "/last_signal",
+    "cmd:analyze": "/analyze",
+    "cmd:help": "/help",
+}
 
 SIGNAL_HEADER_RE = re.compile(r"^\s*⚪\s+(?P<symbol>\S+)\s+[—-]\s+(?P<action>BUY|SELL|WAIT)\b", re.MULTILINE)
 CONFIDENCE_RE = re.compile(r"^Confidence:\s*(?P<confidence>\d+(?:\.\d+)?)\s*%", re.IGNORECASE | re.MULTILINE)
@@ -47,6 +55,32 @@ def _telegram_text(text: str) -> str:
     return html.escape(text)
 
 
+def menu_reply_markup() -> dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "Status", "callback_data": "cmd:status"},
+                {"text": "Last Signal", "callback_data": "cmd:last_signal"},
+            ],
+            [
+                {"text": "Analyze", "callback_data": "cmd:analyze"},
+                {"text": "Help / Menu", "callback_data": "cmd:help"},
+            ],
+        ]
+    }
+
+
+def analysis_loading_text(command_text: str, app_state) -> str:
+    latest_signal = getattr(app_state, "latest_tradingview_signal", None)
+    symbols, timeframe = _parse_analyze_args(command_text, latest_signal)
+    return (
+        "Loading analyze...\n"
+        f"Pairs: {len(symbols)}\n"
+        f"Timeframe: {timeframe}\n"
+        "TradingView scan, screenshot, AI analysis jalan. Tunggu hasil terkirim."
+    )
+
+
 async def send_message(text: str, chat_id: str | None = None, reply_markup=None, parse_mode: str | None = "HTML") -> bool:
     if not settings.telegram_enabled:
         logger.warning("Telegram token or chat_id not configured; signal kept locally only")
@@ -72,7 +106,13 @@ async def send_message(text: str, chat_id: str | None = None, reply_markup=None,
         return False
 
 
-async def send_photo(photo_path: str, caption: str | None = None, chat_id: str | None = None, parse_mode: str | None = "HTML") -> bool:
+async def send_photo(
+    photo_path: str,
+    caption: str | None = None,
+    chat_id: str | None = None,
+    parse_mode: str | None = "HTML",
+    reply_markup=None,
+) -> bool:
     if not settings.telegram_enabled:
         logger.warning("Telegram token or chat_id not configured; signal kept locally only")
         return False
@@ -87,6 +127,8 @@ async def send_photo(photo_path: str, caption: str | None = None, chat_id: str |
         data["parse_mode"] = parse_mode
     if caption:
         data["caption"] = caption[:1024]
+    if reply_markup is not None:
+        data["reply_markup"] = json.dumps(reply_markup)
 
     try:
         with path.open("rb") as file_obj:
@@ -97,6 +139,38 @@ async def send_photo(photo_path: str, caption: str | None = None, chat_id: str |
         return True
     except Exception as e:
         logger.error(f"Failed to send Telegram photo: {e}")
+        return False
+
+
+async def send_chat_action(action: str = "typing", chat_id: str | None = None) -> bool:
+    if not settings.telegram_enabled:
+        return False
+
+    payload = {"chat_id": chat_id or settings.telegram_allowed_chat_id, "action": action}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(_telegram_url("sendChatAction"), json=payload)
+            response.raise_for_status()
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to send Telegram chat action: {e}")
+        return False
+
+
+async def answer_callback_query(callback_query_id: str, text: str | None = None) -> bool:
+    if not settings.telegram_enabled:
+        return False
+
+    payload: dict[str, Any] = {"callback_query_id": callback_query_id}
+    if text:
+        payload["text"] = text
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(_telegram_url("answerCallbackQuery"), json=payload)
+            response.raise_for_status()
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to answer Telegram callback: {e}")
         return False
 
 
@@ -119,6 +193,13 @@ def _format_signal(signal: dict[str, Any] | None) -> str:
         value = signal.get(key)
         if value not in (None, ""):
             lines.append(f"<b>{label}:</b> {html.escape(str(value))}")
+    return "\n".join(lines)
+
+
+def _help_message() -> str:
+    lines = ["<b>OneTapTrade Commands</b>"]
+    lines.extend(f"/{cmd['command']} - {html.escape(cmd['description'])}" for cmd in BOT_COMMANDS)
+    lines.append("/menu - Show command list")
     return "\n".join(lines)
 
 
@@ -300,6 +381,32 @@ async def build_analysis_responses(text: str, app_state) -> list[dict[str, Any]]
     return responses
 
 
+async def send_analysis_command_responses(text: str, app_state, chat_id: str) -> None:
+    await send_chat_action("typing", chat_id=chat_id)
+    await send_message(
+        _telegram_text(analysis_loading_text(text, app_state)),
+        chat_id=chat_id,
+        reply_markup=menu_reply_markup(),
+    )
+    responses = await build_analysis_responses(text, app_state)
+    for response_payload in responses:
+        analysis_text = response_payload.get("text") or ""
+        photo_path = response_payload.get("photo_path")
+        if photo_path:
+            await send_photo(
+                str(photo_path),
+                _telegram_text(analysis_text),
+                chat_id=str(chat_id),
+                reply_markup=menu_reply_markup(),
+            )
+        else:
+            await send_message(
+                _telegram_text(analysis_text),
+                chat_id=str(chat_id),
+                reply_markup=menu_reply_markup(),
+            )
+
+
 async def run_auto_signal_loop(app_state, stop_event: asyncio.Event) -> None:
     if not settings.auto_signal_enabled:
         logger.info("Auto signal disabled")
@@ -364,10 +471,7 @@ async def handle_command_text(text: str, app_state) -> str:
         responses = await build_analysis_responses(text, app_state)
         return "\n\n".join(response["text"] or "" for response in responses)
     if command in ("/help", "/menu"):
-        lines = ["<b>OneTapTrade Commands</b>"]
-        lines.extend(f"/{cmd['command']} - {html.escape(cmd['description'])}" for cmd in BOT_COMMANDS)
-        lines.append("/menu - Show command list")
-        return "\n".join(lines)
+        return _help_message()
 
     return "Command tidak dikenal. Ketik /help."
 
@@ -386,6 +490,35 @@ async def _drop_pending_updates() -> int | None:
         return None
 
 
+async def handle_callback_query(callback_query: dict[str, Any], app_state) -> None:
+    callback_id = callback_query.get("id")
+    command_text = CALLBACK_COMMANDS.get(callback_query.get("data"))
+    message = callback_query.get("message") or {}
+    chat = message.get("chat") or {}
+    chat_id = chat.get("id")
+
+    if not _allowed_chat(chat_id):
+        logger.warning(f"Ignoring Telegram callback from unauthorized chat_id={chat_id}")
+        if callback_id:
+            await answer_callback_query(callback_id, "Unauthorized")
+        return
+    if not command_text:
+        if callback_id:
+            await answer_callback_query(callback_id, "Unknown command")
+        await send_message("Command tidak dikenal. Ketik /help.", chat_id=str(chat_id), reply_markup=menu_reply_markup())
+        return
+
+    if callback_id:
+        await answer_callback_query(callback_id, "Loading analyze..." if command_text == "/analyze" else None)
+
+    if command_text == "/analyze":
+        await send_analysis_command_responses(command_text, app_state, str(chat_id))
+        return
+
+    reply = await handle_command_text(command_text, app_state)
+    await send_message(reply, chat_id=str(chat_id), reply_markup=menu_reply_markup())
+
+
 async def run_command_polling(app_state, stop_event: asyncio.Event) -> None:
     if not settings.telegram_enabled or not settings.telegram_command_polling_enabled:
         logger.info("Telegram command polling disabled")
@@ -400,7 +533,7 @@ async def run_command_polling(app_state, stop_event: asyncio.Event) -> None:
             try:
                 response = await client.get(
                     _telegram_url("getUpdates"),
-                    params={"timeout": 30, "offset": offset, "allowed_updates": '["message"]'},
+                    params={"timeout": 30, "offset": offset, "allowed_updates": '["message","callback_query"]'},
                 )
                 response.raise_for_status()
                 updates = response.json().get("result", [])
@@ -411,6 +544,11 @@ async def run_command_polling(app_state, stop_event: asyncio.Event) -> None:
 
             for update in updates:
                 offset = update.get("update_id", 0) + 1
+                callback_query = update.get("callback_query")
+                if callback_query:
+                    await handle_callback_query(callback_query, app_state)
+                    continue
+
                 message = update.get("message") or {}
                 chat = message.get("chat") or {}
                 chat_id = chat.get("id")
@@ -423,17 +561,10 @@ async def run_command_polling(app_state, stop_event: asyncio.Event) -> None:
 
                 command = text.strip().split()[0].split("@")[0].lower()
                 if command in ("/analyze", "/analysis"):
-                    responses = await build_analysis_responses(text, app_state)
-                    for response_payload in responses:
-                        analysis_text = response_payload.get("text") or ""
-                        photo_path = response_payload.get("photo_path")
-                        if photo_path:
-                            await send_photo(str(photo_path), _telegram_text(analysis_text), chat_id=str(chat_id))
-                        else:
-                            await send_message(_telegram_text(analysis_text), chat_id=str(chat_id))
+                    await send_analysis_command_responses(text, app_state, str(chat_id))
                     continue
 
                 reply = await handle_command_text(text, app_state)
-                await send_message(reply, chat_id=str(chat_id))
+                await send_message(reply, chat_id=str(chat_id), reply_markup=menu_reply_markup())
 
     logger.info("Telegram command polling stopped")

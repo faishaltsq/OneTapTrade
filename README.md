@@ -205,6 +205,13 @@ Alias:
 /analysis
 ```
 
+Semua command reply balik dengan inline keyboard:
+
+- `Status` dan `Last Signal` di satu baris.
+- `Analyze` dan `Help / Menu` di baris kedua.
+
+Tombol `Analyze` mengirim `sendChatAction` typing dan loading message sebelum chart scan berjalan, lalu kirim hasil satu per satu sebagai pesan atau foto dengan keyboard yang sama.
+
 Analisis semua pair dari `DEFAULT_SYMBOLS`:
 
 ```text
