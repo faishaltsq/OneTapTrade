@@ -21,6 +21,8 @@ def test_settings_defaults_are_signal_only():
     assert settings.tradingview_snr_bar_count == 200
     assert settings.snr_timeframes == ["240", "D"]
     assert settings.capture_chart_on_signal is True
+    assert settings.prediction_drawing_enabled is True
+    assert settings.prediction_drawing_bars_ahead == 24
     assert settings.ai_base_url == "https://api.deepseek.com"
     assert settings.ai_model == "deepseek-v4-pro"
     assert settings.ai_trading_style == "forex_daytrade"

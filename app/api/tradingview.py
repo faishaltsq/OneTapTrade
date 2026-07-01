@@ -72,7 +72,8 @@ async def tradingview_webhook(request: Request):
     chart_context = None
     ai_analysis = None
     screenshot_path = None
-    if settings.capture_chart_on_signal or settings.ai_analysis_on_signal:
+    drawing_result = None
+    if settings.capture_chart_on_signal or settings.ai_analysis_on_signal or settings.prediction_drawing_enabled:
         try:
             from app.tradingview_mcp import get_chart_context
 
@@ -104,6 +105,19 @@ async def tradingview_webhook(request: Request):
         telegram_message = formatted_signal_message(chart_context or {}, signal, ai_analysis)
     except Exception:
         telegram_message = f"⚪ {signal['symbol']} — {signal['action']}\n\nReason:\nTradingView signal diterima."
+    if chart_context:
+        try:
+            from app.signal_drawing import draw_prediction
+            from app.tradingview_mcp import run_tv_command
+
+            drawing_result = await draw_prediction(telegram_message, chart_context)
+            if drawing_result.get("success"):
+                screenshot = await run_tv_command("screenshot", "-r", "chart")
+                if screenshot.get("success"):
+                    screenshot_path = screenshot.get("file_path")
+        except Exception as e:
+            drawing_result = {"success": False, "error": str(e)}
+            logger.warning(f"Failed to draw TradingView prediction: {e}")
     try:
         from app.telegram_bot.bot import send_message, send_photo
 
@@ -122,6 +136,7 @@ async def tradingview_webhook(request: Request):
         "screenshot_path": screenshot_path,
         "chart_context_success": chart_context.get("success") if chart_context else None,
         "ai_analysis": ai_analysis,
+        "drawing": drawing_result,
     }
 
 

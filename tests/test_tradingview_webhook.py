@@ -16,9 +16,11 @@ def test_tradingview_webhook_accepts_json_signal(monkeypatch):
     messages = []
     original_secret = settings.tradingview_webhook_secret
     original_capture = settings.capture_chart_on_signal
+    original_prediction = settings.prediction_drawing_enabled
     try:
         settings.tradingview_webhook_secret = "secret-1"
         settings.capture_chart_on_signal = False
+        settings.prediction_drawing_enabled = False
 
         async def fake_send_message(text, reply_markup=None, **kwargs):
             messages.append(text)
@@ -54,6 +56,7 @@ def test_tradingview_webhook_accepts_json_signal(monkeypatch):
     finally:
         settings.tradingview_webhook_secret = original_secret
         settings.capture_chart_on_signal = original_capture
+        settings.prediction_drawing_enabled = original_prediction
 
 
 def test_tradingview_webhook_rejects_invalid_secret():
@@ -61,15 +64,18 @@ def test_tradingview_webhook_rejects_invalid_secret():
 
     original_secret = settings.tradingview_webhook_secret
     original_capture = settings.capture_chart_on_signal
+    original_prediction = settings.prediction_drawing_enabled
     try:
         settings.tradingview_webhook_secret = "secret-1"
         settings.capture_chart_on_signal = False
+        settings.prediction_drawing_enabled = False
         response = _client().post("/tradingview/webhook", json={"secret": "wrong"})
 
         assert response.status_code == 401
     finally:
         settings.tradingview_webhook_secret = original_secret
         settings.capture_chart_on_signal = original_capture
+        settings.prediction_drawing_enabled = original_prediction
 
 
 def test_tradingview_webhook_accepts_plain_text(monkeypatch):
@@ -77,9 +83,11 @@ def test_tradingview_webhook_accepts_plain_text(monkeypatch):
 
     original_secret = settings.tradingview_webhook_secret
     original_capture = settings.capture_chart_on_signal
+    original_prediction = settings.prediction_drawing_enabled
     try:
         settings.tradingview_webhook_secret = None
         settings.capture_chart_on_signal = False
+        settings.prediction_drawing_enabled = False
 
         async def fake_send_message(text, reply_markup=None, **kwargs):
             return False
@@ -95,6 +103,7 @@ def test_tradingview_webhook_accepts_plain_text(monkeypatch):
     finally:
         settings.tradingview_webhook_secret = original_secret
         settings.capture_chart_on_signal = original_capture
+        settings.prediction_drawing_enabled = original_prediction
 
 
 def test_tradingview_webhook_sends_screenshot_when_mcp_returns_photo(monkeypatch):
@@ -103,9 +112,11 @@ def test_tradingview_webhook_sends_screenshot_when_mcp_returns_photo(monkeypatch
     sent_photos = []
     original_secret = settings.tradingview_webhook_secret
     original_capture = settings.capture_chart_on_signal
+    original_prediction = settings.prediction_drawing_enabled
     try:
         settings.tradingview_webhook_secret = None
         settings.capture_chart_on_signal = True
+        settings.prediction_drawing_enabled = False
 
         async def fake_context(include_screenshot=True, include_indicators=True, symbol=None, timeframe=None):
             assert symbol == "XAUUSD"
@@ -137,3 +148,4 @@ def test_tradingview_webhook_sends_screenshot_when_mcp_returns_photo(monkeypatch
     finally:
         settings.tradingview_webhook_secret = original_secret
         settings.capture_chart_on_signal = original_capture
+        settings.prediction_drawing_enabled = original_prediction

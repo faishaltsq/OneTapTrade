@@ -256,14 +256,15 @@ def _mark_auto_signal_sent(summary: dict[str, Any], app_state) -> None:
     sent_at_by_key[f"{symbol}:{action}"] = datetime.now(timezone.utc)
 
 
-async def build_analysis_responses(text: str, app_state) -> list[dict[str, str | None]]:
+async def build_analysis_responses(text: str, app_state) -> list[dict[str, Any]]:
     latest_signal = getattr(app_state, "latest_tradingview_signal", None)
     symbols, timeframe = _parse_analyze_args(text, latest_signal)
 
     from app.ai_analysis import analyze_chart_context, formatted_signal_message
-    from app.tradingview_mcp import get_chart_context
+    from app.signal_drawing import draw_prediction
+    from app.tradingview_mcp import get_chart_context, run_tv_command
 
-    responses: list[dict[str, str | None]] = []
+    responses: list[dict[str, Any]] = []
     for symbol in symbols:
         signal = {"symbol": symbol, "action": "WAIT", "timeframe": timeframe}
         context = await get_chart_context(
@@ -283,11 +284,16 @@ async def build_analysis_responses(text: str, app_state) -> list[dict[str, str |
             continue
 
         analysis = await analyze_chart_context(context, signal)
+        message = formatted_signal_message(context, signal, analysis)
+        drawing = await draw_prediction(message, context)
         screenshot = context.get("screenshot") or {}
+        if drawing.get("success"):
+            screenshot = await run_tv_command("screenshot", "-r", "chart")
         responses.append(
             {
-                "text": formatted_signal_message(context, signal, analysis),
+                "text": message,
                 "photo_path": screenshot.get("file_path") if screenshot.get("success") else None,
+                "drawing": drawing,
             }
         )
 

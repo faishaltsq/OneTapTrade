@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     tradingview_snr_bar_count: int = 200
     auto_launch_tradingview_on_startup: bool = True
     capture_chart_on_signal: bool = True
+    prediction_drawing_enabled: bool = True
+    prediction_drawing_bars_ahead: int = 24
 
     ai_api_key: Optional[str] = None
     ai_base_url: str = "https://api.deepseek.com"

@@ -118,6 +118,42 @@ def test_analyze_command_supports_multi_pair_args(monkeypatch):
     assert responses[0]["photo_path"] == "C:/tmp/XAUUSD.png"
 
 
+def test_analyze_command_redraws_screenshot_after_prediction(monkeypatch):
+    from app.telegram_bot.bot import build_analysis_responses
+
+    async def fake_context(**kwargs):
+        return {
+            "success": True,
+            "state": {"symbol": kwargs["symbol"], "resolution": kwargs["timeframe"]},
+            "quote": {"last": 4030.0},
+            "ohlcv_summary": {"change_pct": "1.2%", "range": 80.0},
+            "screenshot": {"success": True, "file_path": "C:/tmp/before.png"},
+        }
+
+    async def fake_analysis(context, signal):
+        return {
+            "success": True,
+            "analysis": "⚪ OANDA:XAUUSD — BUY\n\nBias: Bullish\nConfidence: 80%\n\nEntry: MARKET 4030\nSL: 4020\nTP1: 4050\nTP2: 4070\n\nReason:\nValid.\n\nInvalid jika:\nBreak SL.\n\nRisk:\nGunakan lot sesuai manajemen risiko.",
+        }
+
+    async def fake_draw_prediction(message, context):
+        return {"success": True}
+
+    async def fake_run_tv_command(*args):
+        assert args == ("screenshot", "-r", "chart")
+        return {"success": True, "file_path": "C:/tmp/after.png"}
+
+    monkeypatch.setattr("app.tradingview_mcp.get_chart_context", fake_context)
+    monkeypatch.setattr("app.ai_analysis.analyze_chart_context", fake_analysis)
+    monkeypatch.setattr("app.signal_drawing.draw_prediction", fake_draw_prediction)
+    monkeypatch.setattr("app.tradingview_mcp.run_tv_command", fake_run_tv_command)
+
+    responses = asyncio.run(build_analysis_responses("/analyze OANDA:XAUUSD tf=60", SimpleNamespace()))
+
+    assert responses[0]["photo_path"] == "C:/tmp/after.png"
+    assert responses[0]["drawing"]["success"] is True
+
+
 def test_menu_alias_shows_help():
     from app.telegram_bot.bot import handle_command_text
 

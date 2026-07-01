@@ -108,6 +108,8 @@ TRADINGVIEW_SNR_TIMEFRAMES=240,D
 TRADINGVIEW_SNR_BAR_COUNT=200
 AUTO_LAUNCH_TRADINGVIEW_ON_STARTUP=true
 CAPTURE_CHART_ON_SIGNAL=true
+PREDICTION_DRAWING_ENABLED=true
+PREDICTION_DRAWING_BARS_AHEAD=24
 
 AI_API_KEY=
 AI_BASE_URL=https://api.deepseek.com
@@ -145,6 +147,8 @@ Catatan DeepSeek AI:
 - Setup chart saat ini terdeteksi punya `EMA 20/50/100/200` dan `Smart Money Concepts [LuxAlgo]`; data ini dipakai sebagai tambahan confluence day-trade.
 - EMA 50/200 juga dihitung langsung dari OHLCV TradingView memakai `TRADINGVIEW_EMA_BAR_COUNT`, jadi tetap tersedia walaupun indikator EMA protected hanya expose satu `Plot` di data window.
 - SNR hanya dihitung dari high timeframe yang ada di `TRADINGVIEW_SNR_TIMEFRAMES`, default `240,D`, agar level valid untuk day-trade dan tidak terlalu noise dari TF entry.
+- Jika hasil analisa punya `BUY`/`SELL` dengan Entry, SL, dan TP valid, app menggambar prediction setup di chart TradingView: reward box, risk box, line Entry, SL, TP1, TP2, dan label LONG/SHORT.
+- `PREDICTION_DRAWING_BARS_AHEAD` mengatur panjang projection ke kanan chart. App tidak menghapus drawing lama otomatis agar tidak merusak drawing manual.
 - AI membantu meningkatkan selektivitas signal, tetapi tidak menjamin profit atau win-rate tertentu.
 
 Catatan automatic signal:
@@ -234,6 +238,8 @@ Setiap pair akan:
 - mengirim screenshot + hasil analisis ke Telegram.
 
 Automatic signal memakai alur yang sama dengan `/analyze`, tetapi berjalan background saat server menyala dan hanya mengirim signal yang lolos filter confidence/cooldown.
+
+Jika prediction drawing aktif, screenshot Telegram untuk `/analyze`, webhook, dan automatic signal akan diambil ulang setelah drawing dibuat supaya setup long/short terlihat di gambar.
 
 ## Format Pesan Analisis
 
