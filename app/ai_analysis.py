@@ -673,9 +673,9 @@ async def analyze_chart_context(context: dict[str, Any], signal: dict[str, Any] 
     if not settings.ai_enabled:
         return {"success": False, "configured": False, "analysis": None}
 
-    url = settings.ai_base_url.rstrip("/") + "/chat/completions"
+    url = settings.effective_ai_base_url.rstrip("/") + "/chat/completions"
     payload = {
-        "model": settings.ai_model,
+        "model": settings.effective_ai_model,
         "messages": [
             {
                 "role": "system",
@@ -693,7 +693,7 @@ async def analyze_chart_context(context: dict[str, Any], signal: dict[str, Any] 
         "temperature": 0.2,
         "max_tokens": 700,
     }
-    headers = {"Authorization": f"Bearer {settings.ai_api_key}"}
+    headers = {"Authorization": f"Bearer {settings.effective_ai_api_key}"}
 
     try:
         async with httpx.AsyncClient(timeout=45) as client:
