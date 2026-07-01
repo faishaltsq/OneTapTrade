@@ -701,6 +701,34 @@ async def analyze_chart_context(context: dict[str, Any], signal: dict[str, Any] 
             response.raise_for_status()
             data = response.json()
         content = data["choices"][0]["message"]["content"]
+
+        from app.signal_drawing import parse_signal
+
+        if parse_signal(content) is None:
+            repair_payload = {
+                "model": settings.ai_model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are a formatting assistant. Convert the following trading analysis into the EXACT template. Do NOT re-analyze. Only reformat.",
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Your previous answer could not be parsed. Rewrite it EXACTLY using this template:\n\n{SIGNAL_FORMAT}\n\n"
+                            f"Previous answer:\n{content}\n\n"
+                            "Output ONLY the template with values filled in. No markdown, no extra text."
+                        ),
+                    },
+                ],
+                "temperature": 0.1,
+                "max_tokens": 700,
+            }
+            repair_response = await client.post(url, headers=headers, json=repair_payload)
+            repair_response.raise_for_status()
+            repair_data = repair_response.json()
+            content = repair_data["choices"][0]["message"]["content"]
+
         return {
             "success": True,
             "configured": True,

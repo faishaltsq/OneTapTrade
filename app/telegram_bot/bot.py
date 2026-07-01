@@ -1,6 +1,7 @@
 import asyncio
 import html
 import json
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -326,7 +327,9 @@ def _mark_auto_signal_sent(summary: dict[str, Any], app_state) -> None:
     if sent_at_by_key is None:
         app_state.auto_signal_last_sent = {}
         sent_at_by_key = app_state.auto_signal_last_sent
-    sent_at_by_key[f"{symbol}:{action}"] = datetime.now(timezone.utc)
+    setup_type = summary.get("setup_type", "")
+    key = f"{symbol}:{action}:{setup_type}" if setup_type else f"{symbol}:{action}"
+    sent_at_by_key[key] = datetime.now(timezone.utc)
 
 
 async def build_analysis_responses(text: str, app_state) -> list[dict[str, Any]]:
@@ -404,7 +407,7 @@ async def send_scan_command_responses(text: str, app_state, admin_chat_id: str) 
         parsed = parse_signal(analysis_text)
 
         if parsed is None:
-            error_pairs.append("unknown")
+            error_pairs.append("parse-error")
             continue
 
         symbol = parsed.get("symbol", "?")
@@ -421,6 +424,10 @@ async def send_scan_command_responses(text: str, app_state, admin_chat_id: str) 
             cooldown_pairs.append(f"{symbol}:{parsed.get('setup_type')}")
             continue
 
+        if settings.auto_signal_max_broadcast_per_scan > 0 and broadcast_count >= settings.auto_signal_max_broadcast_per_scan:
+            cooldown_pairs.append(f"{symbol}:{parsed.get('setup_type')} (max broadcast reached)")
+            continue
+
         photo_path = response_payload.get("photo_path")
         missing_screenshot = not photo_path and settings.auto_signal_require_screenshot
         if missing_screenshot:
@@ -430,19 +437,21 @@ async def send_scan_command_responses(text: str, app_state, admin_chat_id: str) 
         caption = channel_caption(parsed)
         channel_sent = False
         if settings.channel_enabled:
+            if len(caption) > 1000:
+                short_caption = caption[:997] + "..."
+            else:
+                short_caption = caption
             if photo_path:
                 channel_sent = await send_photo(
                     str(photo_path),
-                    caption,
+                    short_caption,
                     chat_id=settings.telegram_channel_id,
                     parse_mode=None,
                 )
             else:
-                channel_sent = await send_message(
-                    caption,
-                    chat_id=settings.telegram_channel_id,
-                    parse_mode=None,
-                )
+                channel_sent = await send_message(short_caption, chat_id=settings.telegram_channel_id, parse_mode=None)
+            if channel_sent and len(caption) > 1000:
+                await send_message(caption, chat_id=settings.telegram_channel_id, parse_mode=None)
 
         if photo_path:
             sent_admin = await send_photo(
@@ -496,6 +505,16 @@ async def send_scan_command_responses(text: str, app_state, admin_chat_id: str) 
         reply_markup=menu_reply_markup(),
     )
 
+    _log_scan_history(
+        timeframe=timeframe,
+        total_pairs=total,
+        setup_pairs=setup_pairs,
+        no_setup_pairs=no_setup_pairs,
+        low_confidence_pairs=low_confidence_pairs,
+        cooldown_pairs=cooldown_pairs,
+        error_pairs=error_pairs,
+    )
+
 
 async def run_auto_signal_loop(app_state, stop_event: asyncio.Event) -> None:
     if not settings.auto_signal_enabled:
@@ -532,6 +551,44 @@ async def run_auto_signal_loop(app_state, stop_event: asyncio.Event) -> None:
 
 
 SCAN_COMMANDS = {"/scan", "/analyze", "/analysis"}
+
+
+def _scan_history_path() -> Path:
+    path = Path("data/scan_history.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _log_scan_history(
+    timeframe: str,
+    total_pairs: int,
+    setup_pairs: list[str],
+    no_setup_pairs: list[str],
+    low_confidence_pairs: list[str],
+    cooldown_pairs: list[str],
+    error_pairs: list[str],
+) -> None:
+    try:
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timeframe": timeframe,
+            "scanned_pairs": total_pairs,
+            "broadcasted_setups": setup_pairs,
+            "no_setup_pairs": no_setup_pairs,
+            "low_confidence_pairs": low_confidence_pairs,
+            "cooldown_pairs": cooldown_pairs,
+            "error_pairs": error_pairs,
+        }
+        path = _scan_history_path()
+        history: list[dict[str, Any]] = []
+        if path.exists():
+            history = json.loads(path.read_text(encoding="utf-8"))
+        history.append(entry)
+        if len(history) > 200:
+            history = history[-200:]
+        path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Failed to log scan history: {e}")
 
 
 async def handle_command_text(text: str, app_state) -> str:

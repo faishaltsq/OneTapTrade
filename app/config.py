@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     auto_signal_send_no_setup_summary: bool = True
     auto_signal_require_screenshot: bool = True
     auto_signal_cooldown_minutes: int = 60
+    auto_signal_max_broadcast_per_scan: int = 3
     day_trade_only: bool = True
 
     telegram_bot_token: Optional[str] = None

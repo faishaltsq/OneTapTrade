@@ -37,6 +37,7 @@ def test_settings_defaults_are_signal_only():
     assert settings.auto_signal_send_no_setup_summary is True
     assert settings.auto_signal_require_screenshot is True
     assert settings.auto_signal_cooldown_minutes == 60
+    assert settings.auto_signal_max_broadcast_per_scan == 3
     assert settings.day_trade_only is True
     assert settings.telegram_enabled is False
     assert settings.ai_enabled is False

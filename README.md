@@ -141,6 +141,8 @@ AUTO_SIGNAL_TIMEFRAME=
 AUTO_SIGNAL_MIN_CONFIDENCE=70
 AUTO_SIGNAL_SEND_WAIT=false
 AUTO_SIGNAL_COOLDOWN_MINUTES=60
+AUTO_SIGNAL_MAX_BROADCAST_PER_SCAN=3
+DAY_TRADE_ONLY=true
 
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_ALLOWED_CHAT_ID=
@@ -174,7 +176,8 @@ Catatan automatic signal:
 - Scanner otomatis menjalankan analisa semua `DEFAULT_SYMBOLS` setiap `AUTO_SIGNAL_INTERVAL_MINUTES`.
 - `AUTO_SIGNAL_TIMEFRAME` kosong berarti pakai `DEFAULT_TIMEFRAME`; isi misalnya `15` atau `60` jika ingin override.
 - Default hanya kirim `BUY`/`SELL` dengan confidence minimal `AUTO_SIGNAL_MIN_CONFIDENCE`; `WAIT` tidak dikirim kecuali `AUTO_SIGNAL_SEND_WAIT=true`.
-- `AUTO_SIGNAL_COOLDOWN_MINUTES` mencegah spam signal yang sama untuk pair/action yang sama.
+- `AUTO_SIGNAL_COOLDOWN_MINUTES` mencegah spam signal yang sama untuk symbol:action:setup_type yang sama.
+- `AUTO_SIGNAL_MAX_BROADCAST_PER_SCAN=3` membatasi maksimal broadcast per scan ke channel.
 
 ## Menjalankan Server
 
@@ -208,17 +211,18 @@ Invoke-WebRequest "http://localhost:8000/analysis/chart-context?symbol=OANDA:XAU
 Command yang aktif:
 
 ```text
+/scan         ← main command, scan semua configured pairs
 /status
 /last_signal
-/analyze
 /help
 ```
 
 Alias:
 
 ```text
+/analyze      ← alias untuk /scan
+/analysis     ← alias untuk /scan
 /menu
-/analysis
 ```
 
 Semua command reply balik dengan inline keyboard:
