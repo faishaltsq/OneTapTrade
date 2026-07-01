@@ -20,6 +20,9 @@ app = FastAPI(
 app.state.latest_tradingview_signal = None
 app.state.telegram_stop_event = None
 app.state.telegram_polling_task = None
+app.state.auto_signal_stop_event = None
+app.state.auto_signal_task = None
+app.state.auto_signal_last_sent = {}
 
 app.add_middleware(
     CORSMiddleware,
@@ -66,17 +69,31 @@ async def startup():
             run_command_polling(app.state, app.state.telegram_stop_event)
         )
 
+    if settings.telegram_enabled and settings.auto_signal_enabled:
+        from app.telegram_bot import run_auto_signal_loop
+
+        app.state.auto_signal_stop_event = asyncio.Event()
+        app.state.auto_signal_task = asyncio.create_task(
+            run_auto_signal_loop(app.state, app.state.auto_signal_stop_event)
+        )
+
 
 @app.on_event("shutdown")
 async def shutdown():
-    stop_event = getattr(app.state, "telegram_stop_event", None)
-    polling_task = getattr(app.state, "telegram_polling_task", None)
-    if stop_event is not None:
-        stop_event.set()
-    if polling_task is not None:
-        polling_task.cancel()
+    tasks = (
+        (getattr(app.state, "telegram_stop_event", None), getattr(app.state, "telegram_polling_task", None)),
+        (getattr(app.state, "auto_signal_stop_event", None), getattr(app.state, "auto_signal_task", None)),
+    )
+    for stop_event, task in tasks:
+        if stop_event is not None:
+            stop_event.set()
+        if task is not None:
+            task.cancel()
+    for _, task in tasks:
+        if task is None:
+            continue
         try:
-            await polling_task
+            await task
         except asyncio.CancelledError:
             pass
 

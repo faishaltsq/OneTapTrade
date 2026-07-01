@@ -117,6 +117,13 @@ AI_TRADING_STYLE=forex_daytrade
 AI_MIN_TRADE_CONFIDENCE=70
 AI_MIN_RR=1.5
 
+AUTO_SIGNAL_ENABLED=false
+AUTO_SIGNAL_INTERVAL_MINUTES=15
+AUTO_SIGNAL_TIMEFRAME=
+AUTO_SIGNAL_MIN_CONFIDENCE=70
+AUTO_SIGNAL_SEND_WAIT=false
+AUTO_SIGNAL_COOLDOWN_MINUTES=60
+
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_ALLOWED_CHAT_ID=
 TELEGRAM_COMMAND_POLLING_ENABLED=true
@@ -139,6 +146,15 @@ Catatan DeepSeek AI:
 - EMA 50/200 juga dihitung langsung dari OHLCV TradingView memakai `TRADINGVIEW_EMA_BAR_COUNT`, jadi tetap tersedia walaupun indikator EMA protected hanya expose satu `Plot` di data window.
 - SNR hanya dihitung dari high timeframe yang ada di `TRADINGVIEW_SNR_TIMEFRAMES`, default `240,D`, agar level valid untuk day-trade dan tidak terlalu noise dari TF entry.
 - AI membantu meningkatkan selektivitas signal, tetapi tidak menjamin profit atau win-rate tertentu.
+
+Catatan automatic signal:
+
+- Aktifkan dengan `AUTO_SIGNAL_ENABLED=true`.
+- Wajib ada `AI_API_KEY`, `TELEGRAM_BOT_TOKEN`, dan `TELEGRAM_ALLOWED_CHAT_ID`.
+- Scanner otomatis menjalankan analisa semua `DEFAULT_SYMBOLS` setiap `AUTO_SIGNAL_INTERVAL_MINUTES`.
+- `AUTO_SIGNAL_TIMEFRAME` kosong berarti pakai `DEFAULT_TIMEFRAME`; isi misalnya `15` atau `60` jika ingin override.
+- Default hanya kirim `BUY`/`SELL` dengan confidence minimal `AUTO_SIGNAL_MIN_CONFIDENCE`; `WAIT` tidak dikirim kecuali `AUTO_SIGNAL_SEND_WAIT=true`.
+- `AUTO_SIGNAL_COOLDOWN_MINUTES` mencegah spam signal yang sama untuk pair/action yang sama.
 
 ## Menjalankan Server
 
@@ -204,6 +220,8 @@ Setiap pair akan:
 - ambil quote dan OHLCV summary,
 - menjalankan AI analysis jika `AI_API_KEY` tersedia,
 - mengirim screenshot + hasil analisis ke Telegram.
+
+Automatic signal memakai alur yang sama dengan `/analyze`, tetapi berjalan background saat server menyala dan hanya mengirim signal yang lolos filter confidence/cooldown.
 
 ## Format Pesan Analisis
 

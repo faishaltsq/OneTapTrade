@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     ai_min_trade_confidence: int = 70
     ai_min_rr: float = 1.5
 
+    auto_signal_enabled: bool = False
+    auto_signal_interval_minutes: int = 15
+    auto_signal_timeframe: str = ""
+    auto_signal_min_confidence: int = 70
+    auto_signal_send_wait: bool = False
+    auto_signal_cooldown_minutes: int = 60
+
     telegram_bot_token: Optional[str] = None
     telegram_allowed_chat_id: Optional[str] = None
     telegram_command_polling_enabled: bool = True

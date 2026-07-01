@@ -19,6 +19,12 @@ def test_settings_defaults_are_signal_only():
     assert settings.ai_trading_style == "forex_daytrade"
     assert settings.ai_min_trade_confidence == 70
     assert settings.ai_min_rr == 1.5
+    assert settings.auto_signal_enabled is False
+    assert settings.auto_signal_interval_minutes == 15
+    assert settings.auto_signal_timeframe == ""
+    assert settings.auto_signal_min_confidence == 70
+    assert settings.auto_signal_send_wait is False
+    assert settings.auto_signal_cooldown_minutes == 60
     assert settings.telegram_enabled is False
     assert settings.ai_enabled is False
 

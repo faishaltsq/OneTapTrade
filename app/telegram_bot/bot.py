@@ -1,5 +1,7 @@
 import asyncio
 import html
+import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +16,9 @@ BOT_COMMANDS = [
     {"command": "analyze", "description": "Analyze configured pairs"},
     {"command": "help", "description": "Show command list"},
 ]
+
+SIGNAL_HEADER_RE = re.compile(r"^\s*⚪\s+(?P<symbol>\S+)\s+[—-]\s+(?P<action>BUY|SELL|WAIT)\b", re.MULTILINE)
+CONFIDENCE_RE = re.compile(r"^Confidence:\s*(?P<confidence>\d+(?:\.\d+)?)\s*%", re.IGNORECASE | re.MULTILINE)
 
 
 def _telegram_url(method: str) -> str:
@@ -138,6 +143,7 @@ async def _status_message(app_state) -> str:
         "<b>OneTapTrade Status</b>\n"
         f"<b>Telegram:</b> connected\n"
         f"<b>TradingView:</b> {html.escape(tv_line)}\n"
+        f"<b>Auto Signal:</b> {html.escape('enabled' if settings.auto_signal_enabled else 'disabled')}\n"
         f"<b>Last Signal:</b> {html.escape(str((latest_signal or {}).get('action', 'none')))}"
     )
 
@@ -184,6 +190,72 @@ def _parse_analyze_args(text: str, latest_signal: dict[str, Any] | None = None) 
     return list(dict.fromkeys(symbols)), timeframe
 
 
+def parse_signal_summary(text: str) -> dict[str, Any]:
+    header_match = SIGNAL_HEADER_RE.search(text or "")
+    confidence_match = CONFIDENCE_RE.search(text or "")
+
+    confidence = None
+    if confidence_match:
+        try:
+            confidence = int(float(confidence_match.group("confidence")))
+        except ValueError:
+            confidence = None
+
+    return {
+        "symbol": header_match.group("symbol") if header_match else None,
+        "action": header_match.group("action") if header_match else None,
+        "confidence": confidence,
+    }
+
+
+def should_send_auto_signal(text: str, min_confidence: int, send_wait: bool = False) -> bool:
+    summary = parse_signal_summary(text)
+    action = summary.get("action")
+    confidence = summary.get("confidence")
+
+    if action == "WAIT":
+        return send_wait
+    if action not in {"BUY", "SELL"}:
+        return False
+    if confidence is None:
+        return False
+    return confidence >= min_confidence
+
+
+def _auto_signal_on_cooldown(summary: dict[str, Any], app_state) -> bool:
+    cooldown_minutes = max(0, settings.auto_signal_cooldown_minutes)
+    if cooldown_minutes == 0:
+        return False
+
+    symbol = summary.get("symbol")
+    action = summary.get("action")
+    if not symbol or not action:
+        return False
+
+    sent_at_by_key = getattr(app_state, "auto_signal_last_sent", None)
+    if sent_at_by_key is None:
+        app_state.auto_signal_last_sent = {}
+        sent_at_by_key = app_state.auto_signal_last_sent
+
+    key = f"{symbol}:{action}"
+    sent_at = sent_at_by_key.get(key)
+    if sent_at is None:
+        return False
+    return datetime.now(timezone.utc) - sent_at < timedelta(minutes=cooldown_minutes)
+
+
+def _mark_auto_signal_sent(summary: dict[str, Any], app_state) -> None:
+    symbol = summary.get("symbol")
+    action = summary.get("action")
+    if not symbol or not action:
+        return
+    sent_at_by_key = getattr(app_state, "auto_signal_last_sent", None)
+    if sent_at_by_key is None:
+        app_state.auto_signal_last_sent = {}
+        sent_at_by_key = app_state.auto_signal_last_sent
+    sent_at_by_key[f"{symbol}:{action}"] = datetime.now(timezone.utc)
+
+
 async def build_analysis_responses(text: str, app_state) -> list[dict[str, str | None]]:
     latest_signal = getattr(app_state, "latest_tradingview_signal", None)
     symbols, timeframe = _parse_analyze_args(text, latest_signal)
@@ -220,6 +292,59 @@ async def build_analysis_responses(text: str, app_state) -> list[dict[str, str |
         )
 
     return responses
+
+
+async def run_auto_signal_loop(app_state, stop_event: asyncio.Event) -> None:
+    if not settings.auto_signal_enabled:
+        logger.info("Auto signal disabled")
+        return
+    if not settings.telegram_enabled:
+        logger.info("Auto signal disabled because Telegram is not configured")
+        return
+    if not settings.ai_enabled:
+        logger.warning("Auto signal requires AI_API_KEY; loop not started")
+        return
+
+    interval_seconds = max(60, settings.auto_signal_interval_minutes * 60)
+    timeframe = settings.auto_signal_timeframe or settings.default_timeframe
+    command_text = f"/analyze all tf={timeframe}"
+    logger.info(
+        "Auto signal loop started: "
+        f"symbols={settings.symbols} timeframe={timeframe} interval={interval_seconds}s"
+    )
+
+    while not stop_event.is_set():
+        try:
+            responses = await build_analysis_responses(command_text, app_state)
+            for response_payload in responses:
+                analysis_text = response_payload.get("text") or ""
+                if not should_send_auto_signal(
+                    analysis_text,
+                    min_confidence=settings.auto_signal_min_confidence,
+                    send_wait=settings.auto_signal_send_wait,
+                ):
+                    continue
+
+                summary = parse_signal_summary(analysis_text)
+                if _auto_signal_on_cooldown(summary, app_state):
+                    continue
+
+                photo_path = response_payload.get("photo_path")
+                if photo_path:
+                    sent = await send_photo(str(photo_path), _telegram_text(analysis_text))
+                else:
+                    sent = await send_message(_telegram_text(analysis_text))
+                if sent:
+                    _mark_auto_signal_sent(summary, app_state)
+        except Exception as e:
+            logger.warning(f"Auto signal scan failed: {e}")
+
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+        except asyncio.TimeoutError:
+            continue
+
+    logger.info("Auto signal loop stopped")
 
 
 async def handle_command_text(text: str, app_state) -> str:
