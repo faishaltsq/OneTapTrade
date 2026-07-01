@@ -33,6 +33,7 @@ Project ini **bukan auto-trading executor**. Tidak ada eksekusi order, tidak ada
 - Python 3.12+.
 - Node.js 18+.
 - TradingView Desktop dari Microsoft Store.
+- Repo `tradingview-mcp` lokal sebagai runtime chart/screenshot bridge.
 - Telegram bot token dari BotFather jika ingin notifikasi Telegram.
 - DeepSeek API key jika ingin analisis AI aktif.
 
@@ -69,6 +70,13 @@ git clone https://github.com/tradesdontlie/tradingview-mcp.git
 cd tradingview-mcp
 npm install
 ```
+
+Requirement penting untuk `tradingview-mcp`:
+
+- Folder default yang dibaca app adalah `../tradingview-mcp` dari root OneTapTrade.
+- FastAPI memanggil MCP via CLI, jadi dependency ini tetap wajib walaupun OpenCode MCP belum aktif.
+- Fresh clone upstream perlu local compatibility patch agar cocok dengan setup ini: Microsoft Store TradingView path, custom CDP port `9222`, health check dari `TRADINGVIEW_APP_PATH`, dan screenshot chart yang melebar sampai price scale kanan.
+- Di mesin ini patch lokal sudah ada di repo sibling `C:\Users\cubeb\OneDrive\Documents\projects\tradingview-mcp`.
 
 Kembali ke app:
 
