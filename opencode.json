@@ -4,17 +4,13 @@
     "tradingview": {
       "type": "local",
       "command": [
-        "npx",
-        "-y",
-        "caveman-shrink",
         "node",
         "C:/Users/cubeb/OneDrive/Documents/projects/tradingview-mcp/src/server.js"
       ],
       "enabled": true,
       "env": {
         "TRADINGVIEW_APP_PATH": "C:/Program Files/WindowsApps/31178TradingViewInc.TradingView_3.2.0.0_x64__q4jpyh43s5mv6/TradingView.exe",
-        "TRADINGVIEW_CDP_PORT": "9222",
-        "CAVEMAN_SHRINK_FIELDS": "description"
+        "TRADINGVIEW_CDP_PORT": "9222"
       }
     }
   },
