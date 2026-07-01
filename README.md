@@ -12,9 +12,13 @@ Project ini **bukan auto-trading executor**. Tidak ada eksekusi order, tidak ada
 - Server bisa switch chart ke pair/timeframe target sebelum screenshot.
 - Screenshot chart dikirim ke Telegram untuk setiap analisis.
 - Screenshot chart sudah dilebarkan agar price scale kanan ikut terlihat.
-- Telegram bot command polling aktif.
+- Telegram bot command polling + inline keyboard + callback query aktif.
 - Multi-pair analysis aktif melalui `/analyze`.
 - DeepSeek OpenAI-compatible chat completion didukung melalui `AI_API_KEY`.
+- Analisa forex day-trade dengan EMA 50/200, SMC LuxAlgo, dan HTF SNR (H4/D).
+- Prediction drawing di chart TradingView: risk/reward box, Entry/SL/TP line, label LONG/SHORT.
+- Automatic signal scanner background dengan confidence filter dan cooldown per pair/action.
+- 11 default pairs: forex majors, crypto COINBASE, USOIL, NAS100.
 - Fitur lama sudah dihapus: MT5, auto trade, execution, Supabase, risk manager, trading loop, DeepSeek executor lama.
 
 ## Fitur Aktif
@@ -23,9 +27,15 @@ Project ini **bukan auto-trading executor**. Tidak ada eksekusi order, tidak ada
 - `GET /tradingview/last-signal` melihat signal terakhir.
 - `GET /analysis/chart-context` mengambil status chart, quote, OHLCV summary, indicator values, dan screenshot.
 - `POST /analysis/chart` menjalankan analisis chart dari context TradingView MCP.
-- Telegram command `/status`, `/last_signal`, `/analyze`, `/help`.
+- Telegram command `/status`, `/last_signal`, `/analyze`, `/help` — semua reply dikembalikan dengan inline keyboard.
+- Telegram inline keyboard: tombol `Status`, `Last Signal`, `Analyze`, `Help / Menu` di setiap pesan.
+- Analyze loading: `sendChatAction` typing + loading message sebelum scan chart, hasil dikirim satu per satu.
 - Multi-pair scan dari daftar `DEFAULT_SYMBOLS`.
 - Optional AI analysis via DeepSeek-compatible API.
+- AI day-trade method: EMA 50/200, SMC LuxAlgo, HTF SNR dari H4/D.
+- Prediction drawing: box dan line Entry/SL/TP di chart TradingView untuk setiap BUY/SELL valid.
+- Automatic signal scanner: scan background interval, filter confidence, cooldown per pair.
+- 11 default symbols: OANDA forex + COINBASE crypto + TVC USOIL + OANDA NAS100.
 
 ## Prasyarat
 
