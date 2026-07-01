@@ -18,6 +18,7 @@ BOT_COMMANDS = [
     {"command": "status", "description": "Show server and TradingView status"},
     {"command": "last_signal", "description": "Show latest TradingView signal"},
     {"command": "history", "description": "Show last 5 scan summaries"},
+    {"command": "today", "description": "Show today's broadcasted setup recap"},
     {"command": "help", "description": "Show command list"},
 ]
 
@@ -27,6 +28,7 @@ CALLBACK_COMMANDS = {
     "cmd:last_signal": "/last_signal",
     "cmd:analyze": "/scan",
     "cmd:history": "/history",
+    "cmd:today": "/today",
     "cmd:help": "/help",
 }
 
@@ -398,6 +400,7 @@ async def send_scan_command_responses(text: str, app_state, admin_chat_id: str) 
     _, timeframe = _parse_analyze_args(text, latest_signal)
 
     setup_pairs: list[str] = []
+    broadcasted_setup_details: list[dict[str, Any]] = []
     no_setup_pairs: list[str] = []
     low_confidence_pairs: list[str] = []
     cooldown_pairs: list[str] = []
@@ -472,6 +475,21 @@ async def send_scan_command_responses(text: str, app_state, admin_chat_id: str) 
         if channel_sent:
             _mark_auto_signal_sent(summary, app_state)
             setup_pairs.append(f"{symbol} {parsed.get('setup_type')}")
+            broadcasted_setup_details.append({
+                "symbol": parsed.get("symbol"),
+                "action": parsed.get("action"),
+                "setup_type": parsed.get("setup_type"),
+                "entry": parsed.get("entry"),
+                "stop_loss": parsed.get("stop_loss"),
+                "tp1": parsed.get("tp1"),
+                "tp2": parsed.get("tp2"),
+                "bias": parsed.get("bias"),
+                "confidence": parsed.get("confidence"),
+                "risk_reward": parsed.get("risk_reward"),
+                "reason": parsed.get("reason"),
+                "invalidation": parsed.get("invalidation"),
+                "channel_sent": True,
+            })
             broadcast_count += 1
 
     total = len(responses)
@@ -513,7 +531,7 @@ async def send_scan_command_responses(text: str, app_state, admin_chat_id: str) 
     _log_scan_history(
         timeframe=timeframe,
         total_pairs=total,
-        setup_pairs=setup_pairs,
+        setup_pairs=broadcasted_setup_details,
         no_setup_pairs=no_setup_pairs,
         low_confidence_pairs=low_confidence_pairs,
         cooldown_pairs=cooldown_pairs,
@@ -556,6 +574,97 @@ async def run_auto_signal_loop(app_state, stop_event: asyncio.Event) -> None:
 
 
 SCAN_COMMANDS = {"/scan", "/analyze", "/analysis"}
+
+
+def build_today_setups_summary() -> str:
+    path = _scan_history_path()
+    if not path.exists():
+        return "Belum ada setup valid yang dibroadcast hari ini."
+
+    history = json.loads(path.read_text(encoding="utf-8"))
+    today = datetime.now(timezone.utc).date().isoformat()
+
+    setups: list[dict[str, Any]] = []
+    for entry in history:
+        ts = entry.get("timestamp", "")
+        if not ts.startswith(today):
+            continue
+        for bs in entry.get("broadcasted_setups", []):
+            if isinstance(bs, str):
+                setups.append({"legacy": True, "text": bs})
+            elif isinstance(bs, dict) and bs.get("channel_sent"):
+                setups.append(bs)
+
+    if not setups:
+        return "Belum ada setup valid yang dibroadcast hari ini."
+
+    buy_count = sum(1 for s in setups if s.get("action") == "BUY")
+    sell_count = sum(1 for s in setups if s.get("action") == "SELL")
+    setup_types = [s.get("setup_type", "") for s in setups if isinstance(s.get("setup_type"), str)]
+    most_common_type = max(set(setup_types), key=setup_types.count) if setup_types else "-"
+    confidences = [s["confidence"] for s in setups if isinstance(s.get("confidence"), (int, float))]
+    avg_conf = round(sum(confidences) / len(confidences)) if confidences else 0
+
+    lines = [
+        "AI DAY-TRADE SETUP RECAP \u2014 TODAY",
+        "",
+        f"Date: {today}",
+        f"Total Setups: {len(setups)}",
+        "",
+    ]
+
+    for i, s in enumerate(setups, 1):
+        if s.get("legacy"):
+            lines.append(f"{i}. {html.escape(s.get('text', '?'))}")
+            lines.append("   Detail: not available from old history.")
+        else:
+            lines.append(f"{i}. {html.escape(str(s.get('symbol', '?')))} \u2014 {html.escape(str(s.get('action', '?')))}")
+            lines.append(f"   Setup Type: {html.escape(str(s.get('setup_type', '-')))}")
+            entry_val = s.get("entry")
+            entry_str = f"{entry_val}" if entry_val is not None else "N/A"
+            sl_val = s.get("stop_loss")
+            sl_str = f"{sl_val}" if sl_val is not None else "N/A"
+            tp1_val = s.get("tp1")
+            tp1_str = f"{tp1_val}" if tp1_val is not None else "N/A"
+            tp2_val = s.get("tp2")
+            tp2_str = f"{tp2_val}" if tp2_val is not None else "N/A"
+            lines.append(f"   Entry: {html.escape(entry_str)}")
+            lines.append(f"   SL: {html.escape(sl_str)}")
+            lines.append(f"   TP1: {html.escape(tp1_str)}   TP2: {html.escape(tp2_str)}")
+            lines.append(f"   Bias: {html.escape(str(s.get('bias', '-')))}")
+            conf = s.get("confidence")
+            lines.append(f"   Confidence: {conf}%")
+            rr = s.get("risk_reward")
+            lines.append(f"   RR: 1:{rr if rr is not None else 'N/A'}")
+            reason = s.get("reason", "")
+            if reason:
+                lines.append(f"   Reason: {html.escape(str(reason)[:120])}")
+        lines.append("")
+
+    if len(lines) > 80:
+        short_lines = [
+            "AI DAY-TRADE SETUP RECAP \u2014 TODAY",
+            "",
+            f"Date: {today} | Total: {len(setups)}",
+            "",
+        ]
+        for i, s in enumerate(setups, 1):
+            if s.get("legacy"):
+                short_lines.append(f"{i}. {html.escape(s.get('text', '?'))}")
+            else:
+                conf = s.get("confidence")
+                short_lines.append(
+                    f"{i}. {html.escape(str(s.get('symbol', '?')))} {s.get('setup_type', '-')} | "
+                    f"Conf: {conf}%"
+                )
+        lines = short_lines + [""]
+
+    lines.append(f"Total: {len(setups)} | BUY: {buy_count} | SELL: {sell_count}")
+    lines.append(f"Top Setup: {most_common_type}")
+    if confidences:
+        lines.append(f"Avg Confidence: {avg_conf}%")
+
+    return "\n".join(lines)
 
 
 def _scan_history_path() -> Path:
@@ -621,6 +730,8 @@ async def handle_command_text(text: str, app_state) -> str:
         return "\n\n".join(response["text"] or "" for response in responses)
     if command in ("/help", "/menu"):
         return _help_message()
+    if command in ("/today", "/setups_today", "/recap_today"):
+        return build_today_setups_summary()
 
     return "Command tidak dikenal. Ketik /help."
 

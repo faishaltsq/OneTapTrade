@@ -29,6 +29,7 @@ Project ini **bukan auto-trading executor**. Tidak ada eksekusi order, tidak ada
 - Fitur lama sudah dihapus: MT5, auto trade, execution, Supabase, risk manager, trading loop, DeepSeek executor lama.
 - `_allowed_chat` support multi admin: `TELEGRAM_ALLOWED_CHAT_ID` + `TELEGRAM_ADMIN_CHAT_ID`.
 - `/history` command: baca 5 scan terakhir dari `data/scan_history.json`.
+- `/today` command: recap semua setup valid yang dibroadcast hari ini (detail entry/SL/TP/confidence/RR).
 - Auto-scan summary dikontrol `AUTO_SIGNAL_SEND_NO_SETUP_SUMMARY`.
 
 ## Fitur Aktif
