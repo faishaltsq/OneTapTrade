@@ -24,6 +24,17 @@ Invalid jika:
 Risk:
 Gunakan lot sesuai manajemen risiko."""
 
+DAYTRADE_PLAYBOOK = """FOREX DAY-TRADE METHOD:
+- Trade horizon: intraday only. Do not force swing-trade assumptions.
+- Bias filter: align signal with trend, market structure, and visible support/resistance. Prefer continuation after pullback or breakout-retest; allow reversal only after clear liquidity sweep and rejection.
+- Entry quality: BUY/SELL only when there is a defensible trigger around current price or a precise LIMIT area. If entry is late, chasing, inside chop, or far from invalidation, choose WAIT.
+- Liquidity and structure: identify recent swing highs/lows, breakout levels, failed breaks, support/resistance, supply/demand, and stop-loss liquidity when available from chart context.
+- Momentum/volatility: use OHLCV summary and indicator_values when present. Avoid trades when volatility is too compressed, candles are indecisive, or momentum conflicts with the bias.
+- Session awareness: prefer London, New York, or London-New York overlap behavior. If session/news context is unavailable, do not invent it; reduce confidence or choose WAIT.
+- Risk quality: for BUY/SELL, SL must sit beyond invalidation structure, not an arbitrary fixed distance. TP1 should target the nearest realistic level; TP2 should target the next structure/liquidity area.
+- Minimum quality gate: only output BUY/SELL when confidence is at least {min_confidence}% and expected reward:risk is at least 1:{min_rr}. Otherwise output WAIT.
+- Be selective. A high-quality WAIT is better than a weak BUY/SELL."""
+
 
 def _safe_value(value: Any, fallback: str = "-") -> str:
     if value in (None, ""):
@@ -79,14 +90,16 @@ def build_chart_analysis_prompt(context: dict[str, Any], signal: dict[str, Any] 
         },
     }
     return (
-        "Analyze this TradingView chart context for a signal-only trading assistant. "
+        f"Analyze this TradingView chart context as a DeepSeek-powered {settings.ai_trading_style} signal-only assistant. "
         "Return ONLY the exact plain-text template below. Do not add markdown, bullets, disclaimers, or extra sections. "
         "Use BUY, SELL, or WAIT. Entry must explicitly choose WAIT, MARKET, or LIMIT. "
         "For WAIT, write Entry: WAIT - no trade and SL/TP as N/A. "
         "For BUY/SELL, choose MARKET only when price is already at a valid trigger; otherwise choose LIMIT with an entry area. "
         "For BUY/SELL, always provide numeric SL, TP1, and TP2 based on visible support/resistance/structure. "
+        "Confidence must reflect setup quality, not certainty of profit. "
         "Use Indonesian for Reason and Invalid jika. Reason must be 1-2 concise sentences. "
         "If the setup is unclear or levels are not defensible, use WAIT.\n\n"
+        f"{DAYTRADE_PLAYBOOK.format(min_confidence=settings.ai_min_trade_confidence, min_rr=settings.ai_min_rr)}\n\n"
         f"TEMPLATE:\n{SIGNAL_FORMAT}\n\n"
         f"DATA:\n{json.dumps(compact_context, ensure_ascii=False, indent=2)}"
     )
@@ -218,7 +231,8 @@ async def analyze_chart_context(context: dict[str, Any], signal: dict[str, Any] 
             {
                 "role": "system",
                 "content": (
-                    "You are a cautious signal-only trading chart analyst. "
+                    "You are a cautious DeepSeek forex day-trading chart analyst. "
+                    "Your job is to improve selectivity and signal quality, not to predict with certainty. "
                     "You never execute trades. You must follow the requested output format exactly."
                 ),
             },

@@ -37,3 +37,23 @@ def test_fallback_buy_generates_concrete_levels():
     assert "TP2: " in message
     assert "N/A" not in message
     assert "Tentukan manual" not in message
+
+
+def test_prompt_uses_deepseek_forex_daytrade_method():
+    from app.ai_analysis import build_chart_analysis_prompt
+
+    prompt = build_chart_analysis_prompt(
+        {
+            "state": {"symbol": "OANDA:EURUSD", "resolution": "60"},
+            "quote": {"last": 1.0875},
+            "ohlcv_summary": {"change_pct": "0.25%", "range": 0.004},
+            "indicator_values": {"RSI": 58},
+        },
+        {"symbol": "OANDA:EURUSD", "action": "WAIT", "timeframe": "60"},
+    )
+
+    assert "DeepSeek-powered forex_daytrade" in prompt
+    assert "FOREX DAY-TRADE METHOD" in prompt
+    assert "liquidity sweep" in prompt
+    assert "expected reward:risk is at least 1:1.5" in prompt
+    assert "confidence is at least 70%" in prompt

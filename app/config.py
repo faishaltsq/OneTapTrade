@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     ai_base_url: str = "https://api.deepseek.com"
     ai_model: str = "deepseek-v4-pro"
     ai_analysis_on_signal: bool = False
+    ai_trading_style: str = "forex_daytrade"
+    ai_min_trade_confidence: int = 70
+    ai_min_rr: float = 1.5
 
     telegram_bot_token: Optional[str] = None
     telegram_allowed_chat_id: Optional[str] = None

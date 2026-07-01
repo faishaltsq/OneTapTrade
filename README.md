@@ -109,6 +109,9 @@ AI_API_KEY=
 AI_BASE_URL=https://api.deepseek.com
 AI_MODEL=deepseek-v4-pro
 AI_ANALYSIS_ON_SIGNAL=false
+AI_TRADING_STYLE=forex_daytrade
+AI_MIN_TRADE_CONFIDENCE=70
+AI_MIN_RR=1.5
 
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_ALLOWED_CHAT_ID=
@@ -120,6 +123,14 @@ Catatan keamanan:
 - Jangan commit `.env`.
 - `.env` sudah di-ignore oleh Git.
 - Isi `TRADINGVIEW_WEBHOOK_SECRET` dengan string random saat memakai public tunnel.
+
+Catatan DeepSeek AI:
+
+- `/analyze` memakai DeepSeek otomatis jika `AI_API_KEY` terisi.
+- Webhook TradingView memakai DeepSeek otomatis jika `AI_ANALYSIS_ON_SIGNAL=true`.
+- `AI_TRADING_STYLE=forex_daytrade` mengaktifkan prompt khusus forex day-trade.
+- `AI_MIN_TRADE_CONFIDENCE=70` dan `AI_MIN_RR=1.5` membuat AI lebih selektif: jika setup tidak memenuhi kualitas minimum, output harus `WAIT`.
+- AI membantu meningkatkan selektivitas signal, tetapi tidak menjamin profit atau win-rate tertentu.
 
 ## Menjalankan Server
 
@@ -215,6 +226,15 @@ Jika AI tidak aktif atau gagal:
 
 - Untuk `WAIT`, output memakai `Entry: WAIT - no trade`, `SL: N/A`, `TP1: N/A`, `TP2: N/A`.
 - Untuk webhook `BUY` atau `SELL`, fallback akan membuat level dasar dari range chart terakhir agar tidak menulis placeholder manual.
+
+Metode AI DeepSeek untuk forex day-trade:
+
+- Filter bias dari trend, market structure, support/resistance, dan kondisi momentum.
+- Cari entry continuation setelah pullback atau breakout-retest; reversal hanya jika ada liquidity sweep dan rejection yang jelas.
+- Hindari entry yang terlambat, chasing, sideways/chop, atau terlalu jauh dari invalidation.
+- SL harus berada di luar struktur invalidation, bukan jarak acak.
+- TP1 target level terdekat yang realistis; TP2 target struktur/liquidity berikutnya.
+- BUY/SELL hanya jika confidence minimal sesuai `AI_MIN_TRADE_CONFIDENCE` dan reward:risk minimal sesuai `AI_MIN_RR`; selain itu `WAIT`.
 
 ## TradingView Webhook
 

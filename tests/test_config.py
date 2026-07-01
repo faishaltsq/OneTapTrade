@@ -9,6 +9,11 @@ def test_settings_defaults_are_signal_only():
     assert settings.default_symbol == "XAUUSD"
     assert settings.symbols
     assert settings.capture_chart_on_signal is True
+    assert settings.ai_base_url == "https://api.deepseek.com"
+    assert settings.ai_model == "deepseek-v4-pro"
+    assert settings.ai_trading_style == "forex_daytrade"
+    assert settings.ai_min_trade_confidence == 70
+    assert settings.ai_min_rr == 1.5
     assert settings.telegram_enabled is False
     assert settings.ai_enabled is False
 
