@@ -1,312 +1,308 @@
 import asyncio
-from typing import Optional
+import html
+from pathlib import Path
+from typing import Any
 
-from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application
+import httpx
 
 from app.config import settings
 from app.logger import logger
-from app.telegram_bot.message_templates import build_main_menu_keyboard, format_signal_message
 
-_application: Optional[Application] = None
-_pending_decisions: dict = {}
-_trading_loop_ref = None
-_bot_stop_event: Optional[asyncio.Event] = None
-_bot_initialized = False
-_bot_started = False
-_polling_started = False
-_bot_stopping = False
+BOT_COMMANDS = [
+    {"command": "status", "description": "Show server and TradingView status"},
+    {"command": "last_signal", "description": "Show latest TradingView signal"},
+    {"command": "analyze", "description": "Analyze configured pairs"},
+    {"command": "help", "description": "Show command list"},
+]
 
 
-async def _error_handler(update: object, context) -> None:
-    logger.error(f"Telegram error: {context.error}")
-    if update and hasattr(update, "effective_chat"):
-        logger.error(f"  chat_id: {update.effective_chat.id if update.effective_chat else 'N/A'}")
+def _telegram_url(method: str) -> str:
+    return f"https://api.telegram.org/bot{settings.telegram_bot_token}/{method}"
 
 
-def init_telegram_bot(trading_loop=None) -> bool:
-    global _application, _trading_loop_ref, _bot_stop_event
-    global _bot_initialized, _bot_started, _polling_started, _bot_stopping
+def _allowed_chat(chat_id: Any) -> bool:
+    return str(chat_id) == str(settings.telegram_allowed_chat_id)
 
-    if not settings.telegram_bot_token:
-        logger.warning("Telegram bot token not configured — bot unavailable")
+
+async def set_bot_commands() -> bool:
+    if not settings.telegram_enabled:
         return False
 
     try:
-        _application = Application.builder().token(settings.telegram_bot_token).build()
-
-        _application.add_error_handler(_error_handler)
-
-        from telegram.ext import MessageHandler, filters
-
-        from app.telegram_bot.commands import get_command_handlers, unknown_command
-        from app.telegram_bot.callbacks import get_callback_handlers
-
-        for handler in get_command_handlers():
-            _application.add_handler(handler)
-
-        for handler in get_callback_handlers():
-            _application.add_handler(handler)
-
-        _application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
-
-        _trading_loop_ref = trading_loop
-        _bot_stop_event = None
-        _bot_initialized = False
-        _bot_started = False
-        _polling_started = False
-        _bot_stopping = False
-
-        logger.info("Telegram bot initialized successfully")
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(_telegram_url("setMyCommands"), json={"commands": BOT_COMMANDS})
+            response.raise_for_status()
         return True
     except Exception as e:
-        logger.error(f"Failed to initialize Telegram bot: {e}")
+        logger.error(f"Failed to set Telegram bot commands: {e}")
         return False
 
 
-def get_bot_application() -> Optional[Application]:
-    return _application
+def _telegram_text(text: str) -> str:
+    return html.escape(text)
 
 
-def get_trading_loop():
-    return _trading_loop_ref
-
-
-async def _set_bot_commands() -> None:
-    if _application is None or _application.bot is None:
-        return
-
-    try:
-        await _application.bot.set_my_commands(
-            [
-                BotCommand("menu", "Show control menu"),
-                BotCommand("help", "Show command list"),
-                BotCommand("status", "Show bot status"),
-                BotCommand("positions", "Show open positions"),
-                BotCommand("last_signal", "Show latest AI signal"),
-                BotCommand("pause", "Pause trading loop"),
-                BotCommand("resume", "Resume trading loop"),
-                BotCommand("settings", "Show current settings"),
-            ]
-        )
-    except Exception as e:
-        logger.warning(f"Failed to set Telegram command menu: {e}")
-
-
-async def run_bot() -> None:
-    global _bot_stop_event, _bot_initialized, _bot_started, _polling_started
-
-    if _application is None:
-        logger.warning("Bot application not initialized, cannot run")
-        return
-
-    if not settings.telegram_allowed_chat_id:
-        logger.warning("No allowed chat_id configured")
-
-    app = _application
-    _bot_stop_event = asyncio.Event()
-
-    try:
-        logger.info("Starting Telegram bot polling...")
-        await app.initialize()
-        _bot_initialized = True
-
-        await _set_bot_commands()
-
-        await app.start()
-        _bot_started = True
-
-        if app.updater is None:
-            raise RuntimeError("Telegram updater unavailable")
-
-        await app.updater.start_polling(drop_pending_updates=True)
-        _polling_started = True
-        logger.info("Telegram bot polling started")
-
-        await _bot_stop_event.wait()
-        logger.info("Telegram bot polling stopped")
-    except asyncio.CancelledError:
-        logger.info("Telegram bot polling task cancelled")
-        raise
-    except Exception as e:
-        logger.exception(f"Telegram bot polling failed: {e}")
-
-
-async def _shutdown_application(app: Application) -> None:
-    global _bot_initialized, _bot_started, _polling_started, _bot_stopping
-
-    if _bot_stopping:
-        return
-
-    _bot_stopping = True
-    try:
-        if _polling_started and app.updater is not None:
-            await app.updater.stop()
-            _polling_started = False
-        if _bot_started:
-            await app.stop()
-            _bot_started = False
-        if _bot_initialized:
-            await app.shutdown()
-            _bot_initialized = False
-    finally:
-        _bot_stopping = False
-
-
-async def stop_bot() -> None:
-    global _application, _bot_stop_event
-    if _application is None:
-        return
-
-    logger.info("Stopping Telegram bot...")
-    try:
-        app = _application
-        if _bot_stop_event is not None:
-            _bot_stop_event.set()
-        await _shutdown_application(app)
-    except Exception as e:
-        logger.error(f"Error stopping bot: {e}")
-    finally:
-        _application = None
-        _bot_stop_event = None
-        logger.info("Telegram bot stopped")
-
-
-async def send_message(text: str, reply_markup=None) -> bool:
-    if not settings.telegram_bot_token or not settings.telegram_allowed_chat_id:
-        logger.warning("Bot token or allowed chat_id not configured — cannot send message")
+async def send_message(text: str, chat_id: str | None = None, reply_markup=None, parse_mode: str | None = "HTML") -> bool:
+    if not settings.telegram_enabled:
+        logger.warning("Telegram token or chat_id not configured; signal kept locally only")
         return False
 
-    if _application is None or _application.bot is None:
-        logger.warning("Bot application not available — cannot send message")
-        return False
+    payload = {
+        "chat_id": chat_id or settings.telegram_allowed_chat_id,
+        "text": text,
+        "disable_web_page_preview": True,
+    }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
 
     try:
-        await _application.bot.send_message(
-            chat_id=settings.telegram_allowed_chat_id,
-            text=text,
-            parse_mode="HTML",
-            reply_markup=reply_markup,
-        )
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(_telegram_url("sendMessage"), json=payload)
+            response.raise_for_status()
         return True
     except Exception as e:
         logger.error(f"Failed to send Telegram message: {e}")
         return False
 
 
-async def send_main_menu(text: str = None) -> bool:
-    paused = False
-    mode = settings.bot_mode
-    active = "ALL"
-    if _trading_loop_ref is not None:
-        try:
-            paused = _trading_loop_ref.is_paused()
-            mode = _trading_loop_ref.status.mode
-            active = _trading_loop_ref.status.active_symbol
-        except Exception:
-            pass
-
-    sym_count = len(settings.symbols)
-    header = text or f"<b>\U0001f916 OneTapTrade Bot</b>\n<b>Pair:</b> {active} ({sym_count} pairs) | {mode} | {'\u23f8\ufe0f Paused' if paused else '\u25b6\ufe0f Running'}"
-    return await send_message(header, reply_markup=build_main_menu_keyboard(is_paused=paused, mode=mode, active_symbol=active))
-
-
-async def send_trade_signal(decision, risk_result: dict, decision_id: str, market_payload: dict | None = None) -> bool:
-    if not settings.telegram_bot_token or not settings.telegram_allowed_chat_id:
-        logger.warning("Cannot send trade signal — bot not configured")
+async def send_photo(photo_path: str, caption: str | None = None, chat_id: str | None = None, parse_mode: str | None = "HTML") -> bool:
+    if not settings.telegram_enabled:
+        logger.warning("Telegram token or chat_id not configured; signal kept locally only")
         return False
 
-    if _application is None or _application.bot is None:
-        logger.warning("Bot application not available")
+    path = Path(photo_path)
+    if not path.exists():
+        logger.error(f"Telegram photo not found: {photo_path}")
         return False
+
+    data = {"chat_id": chat_id or settings.telegram_allowed_chat_id}
+    if parse_mode:
+        data["parse_mode"] = parse_mode
+    if caption:
+        data["caption"] = caption[:1024]
 
     try:
-        symbol = risk_result.get("symbol", settings.default_symbol)
-        signal_text = format_signal_message(decision, risk_result, symbol, market_payload=market_payload)
-
-        reply_markup = None
-        if settings.is_semi_auto and risk_result.get("approved"):
-            keyboard = [
-                [
-                    InlineKeyboardButton(
-                        "\u2705 Approve Trade",
-                        callback_data=f"APPROVE_TRADE:{decision_id}",
-                    ),
-                    InlineKeyboardButton(
-                        "\u274c Reject Trade",
-                        callback_data=f"REJECT_TRADE:{decision_id}",
-                    ),
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-        _pending_decisions[decision_id] = decision
-
-        sent = await send_message(signal_text, reply_markup=reply_markup)
-        if sent:
-            logger.info(f"Trade signal sent for decision {decision_id}")
-        return sent
+        with path.open("rb") as file_obj:
+            files = {"photo": (path.name, file_obj, "image/png")}
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(_telegram_url("sendPhoto"), data=data, files=files)
+                response.raise_for_status()
+        return True
     except Exception as e:
-        logger.error(f"Failed to send trade signal: {e}")
+        logger.error(f"Failed to send Telegram photo: {e}")
         return False
 
 
-async def notify_trade_executed(trade_result: dict) -> bool:
-    ticket = trade_result.get("ticket") or trade_result.get("order")
-    symbol = trade_result.get("symbol", settings.default_symbol)
-    volume = trade_result.get("volume", "?")
-    price = trade_result.get("price", "?")
+def _format_signal(signal: dict[str, Any] | None) -> str:
+    if not signal:
+        return "Belum ada signal TradingView yang diterima."
 
-    text = (
-        "<b>\u2705 Trade Executed</b>\n\n"
-        f"<b>Ticket:</b> <code>{ticket}</code>\n"
-        f"<b>Symbol:</b> <code>{symbol}</code>\n"
-        f"<b>Volume:</b> {volume}\n"
-        f"<b>Price:</b> {price}"
+    lines = [
+        "<b>Last TradingView Signal</b>",
+        f"<b>Symbol:</b> {html.escape(str(signal.get('symbol', '-')))}",
+        f"<b>Action:</b> {html.escape(str(signal.get('action', '-')))}",
+    ]
+    for label, key in (
+        ("Price", "price"),
+        ("Timeframe", "timeframe"),
+        ("Strategy", "strategy"),
+        ("Message", "message"),
+        ("Received", "received_at"),
+    ):
+        value = signal.get(key)
+        if value not in (None, ""):
+            lines.append(f"<b>{label}:</b> {html.escape(str(value))}")
+    return "\n".join(lines)
+
+
+async def _status_message(app_state) -> str:
+    try:
+        from app.tradingview_mcp import run_tv_command
+
+        status = await run_tv_command("status")
+    except Exception as e:
+        status = {"success": False, "error": str(e)}
+
+    latest_signal = getattr(app_state, "latest_tradingview_signal", None)
+    if status.get("success"):
+        tv_line = (
+            f"connected | {status.get('chart_symbol', 'unknown')} "
+            f"TF {status.get('chart_resolution', 'unknown')}"
+        )
+    else:
+        tv_line = f"not connected | {status.get('error', 'unknown error')}"
+
+    return (
+        "<b>OneTapTrade Status</b>\n"
+        f"<b>Telegram:</b> connected\n"
+        f"<b>TradingView:</b> {html.escape(tv_line)}\n"
+        f"<b>Last Signal:</b> {html.escape(str((latest_signal or {}).get('action', 'none')))}"
     )
 
-    return await send_message(text)
+
+async def _analysis_message(app_state) -> str:
+    latest_signal = getattr(app_state, "latest_tradingview_signal", None)
+    try:
+        from app.ai_analysis import analyze_chart_context, formatted_signal_message
+        from app.tradingview_mcp import get_chart_context
+
+        context = await get_chart_context(
+            include_screenshot=True,
+            include_indicators=True,
+            symbol=(latest_signal or {}).get("symbol"),
+            timeframe=(latest_signal or {}).get("timeframe"),
+        )
+        if not context.get("success"):
+            return f"TradingView belum siap: <code>{html.escape(str(context.get('status') or context))}</code>"
+
+        analysis = await analyze_chart_context(context, latest_signal)
+        return formatted_signal_message(context, latest_signal, analysis)
+    except Exception as e:
+        logger.error(f"Telegram analysis command failed: {e}")
+        return f"Analysis gagal: <code>{html.escape(str(e))}</code>"
 
 
-async def notify_trade_rejected(reason: str, decision=None) -> bool:
-    lines = ["<b>\u274c Trade Rejected</b>\n"]
-    lines.append(f"<b>Reason:</b> <i>{reason}</i>")
+def _parse_analyze_args(text: str, latest_signal: dict[str, Any] | None = None) -> tuple[list[str], str]:
+    parts = text.strip().split()[1:]
+    timeframe = str((latest_signal or {}).get("timeframe") or settings.default_timeframe)
+    symbols: list[str] = []
 
-    if decision is not None:
-        try:
-            d = getattr(decision, "decision", None)
-            decision_str = d.value if hasattr(d, "value") else str(d or "?")
-            conf = getattr(decision, "confidence", 0.0)
-            regime = getattr(decision, "market_regime", None)
-            htf = getattr(decision, "higher_timeframe_bias", None)
-            etf = getattr(decision, "entry_timeframe_bias", None)
-            entry_plan = getattr(decision, "entry_plan", None)
-            sl = getattr(entry_plan, "stop_loss", None) if entry_plan else None
-            tp1 = getattr(entry_plan, "take_profit_1", None) if entry_plan else None
-            rr = getattr(entry_plan, "risk_reward_to_tp1", None) if entry_plan else None
+    for part in parts:
+        for token in [value.strip() for value in part.split(",") if value.strip()]:
+            lowered = token.lower()
+            if lowered.startswith("tf=") or lowered.startswith("timeframe="):
+                timeframe = token.split("=", 1)[1]
+            elif lowered == "all":
+                symbols.extend(settings.symbols)
+            else:
+                symbols.append(token)
 
-            d_emoji = "\U0001f7e2" if decision_str == "BUY" else ("\U0001f534" if decision_str == "SELL" else "\u26aa")
-            lines.append(f"\n{d_emoji} <b>{decision_str}</b> | Confidence: {conf:.0%}")
+    if not symbols:
+        symbols = settings.symbols
+    return list(dict.fromkeys(symbols)), timeframe
 
-            trend_parts = []
-            if htf:
-                htf_s = htf.value if hasattr(htf, "value") else str(htf)
-                trend_parts.append(f"D1: {htf_s}")
-            if etf:
-                etf_s = etf.value if hasattr(etf, "value") else str(etf)
-                trend_parts.append(f"M5: {etf_s}")
-            if regime:
-                reg_s = regime.value if hasattr(regime, "value") else str(regime)
-                trend_parts.append(f"Regime: {reg_s}")
-            if trend_parts:
-                lines.append(f"<b>Trend:</b> {' | '.join(trend_parts)}")
 
-            if sl:
-                lines.append(f"<b>SL:</b> {sl}")
-            if tp1:
-                rr_str = f" (R:R {rr:.1f})" if rr else ""
-                lines.append(f"<b>TP1:</b> {tp1}{rr_str}")
-        except Exception:
-            pass
+async def build_analysis_responses(text: str, app_state) -> list[dict[str, str | None]]:
+    latest_signal = getattr(app_state, "latest_tradingview_signal", None)
+    symbols, timeframe = _parse_analyze_args(text, latest_signal)
 
-    return await send_message("\n".join(lines))
+    from app.ai_analysis import analyze_chart_context, formatted_signal_message
+    from app.tradingview_mcp import get_chart_context
+
+    responses: list[dict[str, str | None]] = []
+    for symbol in symbols:
+        signal = {"symbol": symbol, "action": "WAIT", "timeframe": timeframe}
+        context = await get_chart_context(
+            include_screenshot=True,
+            include_indicators=True,
+            symbol=symbol,
+            timeframe=timeframe,
+        )
+
+        if not context.get("success"):
+            responses.append(
+                {
+                    "text": f"⚪ {symbol} — WAIT\n\nReason:\nTradingView belum siap untuk pair ini.",
+                    "photo_path": None,
+                }
+            )
+            continue
+
+        analysis = await analyze_chart_context(context, signal)
+        screenshot = context.get("screenshot") or {}
+        responses.append(
+            {
+                "text": formatted_signal_message(context, signal, analysis),
+                "photo_path": screenshot.get("file_path") if screenshot.get("success") else None,
+            }
+        )
+
+    return responses
+
+
+async def handle_command_text(text: str, app_state) -> str:
+    command = text.strip().split()[0].split("@")[0].lower()
+
+    if command == "/status":
+        return await _status_message(app_state)
+    if command == "/last_signal":
+        return _format_signal(getattr(app_state, "latest_tradingview_signal", None))
+    if command in ("/analyze", "/analysis"):
+        responses = await build_analysis_responses(text, app_state)
+        return "\n\n".join(response["text"] or "" for response in responses)
+    if command in ("/help", "/menu"):
+        lines = ["<b>OneTapTrade Commands</b>"]
+        lines.extend(f"/{cmd['command']} - {html.escape(cmd['description'])}" for cmd in BOT_COMMANDS)
+        lines.append("/menu - Show command list")
+        return "\n".join(lines)
+
+    return "Command tidak dikenal. Ketik /help."
+
+
+async def _drop_pending_updates() -> int | None:
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(_telegram_url("getUpdates"), params={"timeout": 0})
+            response.raise_for_status()
+            updates = response.json().get("result", [])
+        if not updates:
+            return None
+        return max(update.get("update_id", 0) for update in updates) + 1
+    except Exception as e:
+        logger.warning(f"Failed to drop pending Telegram updates: {e}")
+        return None
+
+
+async def run_command_polling(app_state, stop_event: asyncio.Event) -> None:
+    if not settings.telegram_enabled or not settings.telegram_command_polling_enabled:
+        logger.info("Telegram command polling disabled")
+        return
+
+    await set_bot_commands()
+    offset = await _drop_pending_updates()
+    logger.info("Telegram command polling started")
+
+    async with httpx.AsyncClient(timeout=40) as client:
+        while not stop_event.is_set():
+            try:
+                response = await client.get(
+                    _telegram_url("getUpdates"),
+                    params={"timeout": 30, "offset": offset, "allowed_updates": '["message"]'},
+                )
+                response.raise_for_status()
+                updates = response.json().get("result", [])
+            except Exception as e:
+                logger.warning(f"Telegram polling error: {e}")
+                await asyncio.sleep(5)
+                continue
+
+            for update in updates:
+                offset = update.get("update_id", 0) + 1
+                message = update.get("message") or {}
+                chat = message.get("chat") or {}
+                chat_id = chat.get("id")
+                text = message.get("text") or ""
+                if not text.startswith("/"):
+                    continue
+                if not _allowed_chat(chat_id):
+                    logger.warning(f"Ignoring Telegram command from unauthorized chat_id={chat_id}")
+                    continue
+
+                command = text.strip().split()[0].split("@")[0].lower()
+                if command in ("/analyze", "/analysis"):
+                    responses = await build_analysis_responses(text, app_state)
+                    for response_payload in responses:
+                        analysis_text = response_payload.get("text") or ""
+                        photo_path = response_payload.get("photo_path")
+                        if photo_path:
+                            await send_photo(str(photo_path), _telegram_text(analysis_text), chat_id=str(chat_id))
+                        else:
+                            await send_message(_telegram_text(analysis_text), chat_id=str(chat_id))
+                    continue
+
+                reply = await handle_command_text(text, app_state)
+                await send_message(reply, chat_id=str(chat_id))
+
+    logger.info("Telegram command polling stopped")
