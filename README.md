@@ -13,11 +13,14 @@ Project ini **bukan auto-trading executor**. Tidak ada eksekusi order, tidak ada
 - Screenshot chart dikirim ke Telegram untuk setiap analisis.
 - Screenshot chart sudah dilebarkan agar price scale kanan ikut terlihat.
 - Telegram bot command polling + inline keyboard + callback query aktif.
-- Multi-pair analysis aktif melalui `/analyze`.
+- `/scan` command (alias `/analyze`) multi-pair day-trade scan dengan channel broadcast.
+- Telegram channel broadcast: setup valid dikirim ke `TELEGRAM_CHANNEL_ID` dengan caption lengkap.
+- Admin summary: grouped no-setup pairs, low confidence, cooldown, dan error setelah scan.
 - DeepSeek OpenAI-compatible chat completion didukung melalui `AI_API_KEY`.
-- Analisa forex day-trade dengan EMA 50/200, SMC LuxAlgo, dan HTF SNR (H4/D).
-- Prediction drawing di chart TradingView: risk/reward box, Entry/SL/TP line, label LONG/SHORT.
-- Automatic signal scanner background dengan confidence filter dan cooldown per pair/action.
+- AI day-trade setup scanner: 8 setup types (BUY/SELL MARKET/LIMIT/STOP, WAIT, NO_SETUP).
+- Analisa teknikal: EMA 50/200, SMC LuxAlgo, BOS/CHoCH/liquidity sweep/OB/supply-demand/FVG, HTF SNR (H4/D).
+- Prediction drawing di chart TradingView: risk/reward box, Entry/SL/TP1/TP2 line, label LONG/SHORT.
+- Automatic signal scanner background dengan confidence filter, RR filter, screenshot requirement, cooldown per symbol/action/setup_type.
 - 11 default pairs: forex majors, crypto COINBASE, USOIL, NAS100.
 - Fitur lama sudah dihapus: MT5, auto trade, execution, Supabase, risk manager, trading loop, DeepSeek executor lama.
 
@@ -27,14 +30,17 @@ Project ini **bukan auto-trading executor**. Tidak ada eksekusi order, tidak ada
 - `GET /tradingview/last-signal` melihat signal terakhir.
 - `GET /analysis/chart-context` mengambil status chart, quote, OHLCV summary, indicator values, dan screenshot.
 - `POST /analysis/chart` menjalankan analisis chart dari context TradingView MCP.
-- Telegram command `/status`, `/last_signal`, `/analyze`, `/help` — semua reply dikembalikan dengan inline keyboard.
-- Telegram inline keyboard: tombol `Status`, `Last Signal`, `Analyze`, `Help / Menu` di setiap pesan.
-- Analyze loading: `sendChatAction` typing + loading message sebelum scan chart, hasil dikirim satu per satu.
+- Telegram command `/scan`, `/analyze`, `/status`, `/last_signal`, `/help` — semua reply dengan inline keyboard.
+- Telegram inline keyboard: tombol `Scan`, `Status`, `Last Signal`, `Help / Menu`.
+- `/scan` dan `/analyze`: scan semua pair, broadcast valid setup ke channel, admin summary.
+- Scan loading: `sendChatAction` typing + scanning message, hasil dikirim satu per satu.
 - Multi-pair scan dari daftar `DEFAULT_SYMBOLS`.
 - Optional AI analysis via DeepSeek-compatible API.
-- AI day-trade method: EMA 50/200, SMC LuxAlgo, HTF SNR dari H4/D.
+- AI day-trade method: 8 setup types, EMA 50/200, SMC LuxAlgo, HTF SNR dari H4/D.
+- Channel broadcast: hanya BUY/SELL yang lolos confidence, RR, screenshot, day-trade check.
+- Admin summary: grouped no-setup, low confidence, cooldown, error pairs.
 - Prediction drawing: box dan line Entry/SL/TP di chart TradingView untuk setiap BUY/SELL valid.
-- Automatic signal scanner: scan background interval, filter confidence, cooldown per pair.
+- Automatic signal scanner: scan background interval, broadcast ke channel, admin summary.
 - 11 default symbols: OANDA forex + COINBASE crypto + TVC USOIL + OANDA NAS100.
 
 ## Prasyarat
