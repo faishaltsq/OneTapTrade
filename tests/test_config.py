@@ -8,6 +8,10 @@ def test_settings_defaults_are_signal_only():
     assert settings.app_name == "OneTapTrade"
     assert settings.default_symbol == "XAUUSD"
     assert settings.symbols
+    assert "OANDA:GBPJPY" in settings.symbols
+    assert "OANDA:NZDUSD" in settings.symbols
+    assert "TVC:USOIL" in settings.symbols
+    assert "OANDA:NAS100USD" in settings.symbols
     assert "COINBASE:BTCUSD" in settings.symbols
     assert "COINBASE:ETHUSD" in settings.symbols
     assert "COINBASE:SOLUSD" in settings.symbols
