@@ -217,10 +217,49 @@ Alias:
 
 Semua command reply balik dengan inline keyboard:
 
-- `Status` dan `Last Signal` di satu baris.
-- `Analyze` dan `Help / Menu` di baris kedua.
+- `Scan` dan `Status` di satu baris.
+- `Last Signal` dan `Help / Menu` di baris kedua.
 
-Tombol `Analyze` mengirim `sendChatAction` typing dan loading message sebelum chart scan berjalan, lalu kirim hasil satu per satu sebagai pesan atau foto dengan keyboard yang sama.
+Tombol `Scan` mengirim `sendChatAction` typing dan scanning message sebelum chart scan berjalan. Hasil valid di-broadcast ke channel Telegram, admin mendapat summary.
+
+### Channel Broadcast
+
+Jika `TELEGRAM_CHANNEL_ID` diisi:
+
+- Setup valid BUY/SELL dikirim sebagai foto ke channel dengan caption lengkap.
+- WAIT dan NO_SETUP tidak dibroadcast ke channel.
+- Admin mendapat grouped summary setelah setiap scan.
+
+Format caption channel:
+
+```text
+AI DAY TRADE SETUP — {PAIR}
+Setup Type: {setup_type}
+Entry: {entry}
+Stop Loss: {sl}
+Take Profit: TP1: {tp1} TP2: {tp2}
+Market Bias: {bias} Confidence: {confidence}%
+Risk Reward: {risk_reward}
+AI Reason: {reason}
+Invalidation: {invalidation}
+Risk Reminder: Gunakan lot sesuai manajemen risiko.
+```
+
+### Admin Summary
+
+Setelah scan selesai, admin menerima:
+
+```text
+AI DAY-TRADE MULTI-PAIR SCAN SUMMARY
+Timeframe: {timeframe}
+Scanned: {total} pairs
+Broadcasted Setups: {count}
+Setup Pairs: {list}
+No Valid Setup: {count}
+Low Confidence: {list}
+Skipped by Cooldown: {list}
+Result: {summary sentence}
+```
 
 Analisis semua pair dari `DEFAULT_SYMBOLS`:
 

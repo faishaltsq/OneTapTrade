@@ -20,9 +20,9 @@ def test_menu_reply_markup_has_all_command_buttons():
     markup = menu_reply_markup()
     callback_data = [button["callback_data"] for row in markup["inline_keyboard"] for button in row]
 
+    assert "cmd:scan" in callback_data
     assert "cmd:status" in callback_data
     assert "cmd:last_signal" in callback_data
-    assert "cmd:analyze" in callback_data
     assert "cmd:help" in callback_data
 
 
@@ -199,7 +199,7 @@ def test_send_analysis_command_responses_sends_loading_first(monkeypatch):
     asyncio.run(send_analysis_command_responses("/analyze OANDA:XAUUSD tf=60", SimpleNamespace(), "123"))
 
     assert chat_actions == [("typing", "123")]
-    assert "Loading analyze" in sent_messages[0]
+    assert "Scanning pairs" in sent_messages[0]
     assert "OANDA:XAUUSD" in sent_messages[1]
 
 
@@ -232,24 +232,34 @@ def test_callback_analyze_answers_and_runs_loading_flow(monkeypatch):
     finally:
         settings.telegram_allowed_chat_id = original_chat_id
 
-    assert answers == [("cb-1", "Loading analyze...")]
-    assert analyses == [("/analyze", "123")]
+    assert answers == [("cb-1", "Loading scan...")]
+    assert analyses == [("/scan", "123")]
 
 
-def test_auto_signal_filter_uses_action_and_confidence():
+def test_auto_signal_filter_uses_action_and_confidence(monkeypatch):
+    from app.config import settings
     from app.telegram_bot.bot import parse_signal_summary, should_send_auto_signal
 
-    text = "⚪ OANDA:EURUSD — BUY\n\nBias: Bullish\nConfidence: 74%\n\nEntry: LIMIT 1.0800"
+    text = "⚪ OANDA:EURUSD — BUY\n\nSetup Type:\nBUY_LIMIT\n\nDay Trade:\nYES\n\nBias: Bullish\nConfidence: 74%\n\nRisk Reward:\n1:1.8\n\nEntry: LIMIT 1.0800\n\nStop Loss:\n1.0750\n\nTake Profit:\nTP1: 1.0900\nTP2: 1.1000\n\nAI Reason:\nValid.\n\nInvalidation:\nBelow SL.\n\nRisk Reminder:\nGunakan lot sesuai manajemen risiko. Ini bukan financial advice."
 
-    assert parse_signal_summary(text) == {
-        "symbol": "OANDA:EURUSD",
-        "action": "BUY",
-        "confidence": 74,
-    }
-    assert should_send_auto_signal(text, min_confidence=70) is True
-    assert should_send_auto_signal(text, min_confidence=80) is False
-    assert should_send_auto_signal("⚪ OANDA:EURUSD — WAIT\nConfidence: 90%", 70) is False
-    assert should_send_auto_signal("⚪ OANDA:EURUSD — WAIT\nConfidence: 90%", 70, send_wait=True) is True
+    assert parse_signal_summary(text)["symbol"] == "OANDA:EURUSD"
+    assert parse_signal_summary(text)["action"] == "BUY"
+    assert parse_signal_summary(text)["confidence"] == 74
+    assert parse_signal_summary(text)["setup_type"] == "BUY_LIMIT"
+
+    original_confidence = settings.auto_signal_min_confidence
+    original_rr = settings.auto_signal_min_rr
+    try:
+        settings.auto_signal_min_confidence = 70
+        settings.auto_signal_min_rr = 1.5
+        assert should_send_auto_signal(text, min_confidence=70) is True
+        settings.auto_signal_min_confidence = 80
+        assert should_send_auto_signal(text, min_confidence=80) is False
+    finally:
+        settings.auto_signal_min_confidence = original_confidence
+        settings.auto_signal_min_rr = original_rr
+
+    assert should_send_auto_signal("⚪ OANDA:EURUSD — WAIT\nSetup Type: WAIT\nDay Trade: NO\nEntry: WAIT - no trade\nStop Loss: N/A\nTake Profit:\nTP1: N/A\nTP2: N/A", 70) is False
 
 
 def test_auto_signal_loop_sends_filtered_signal(monkeypatch):
@@ -259,54 +269,69 @@ def test_auto_signal_loop_sends_filtered_signal(monkeypatch):
     sent_messages = []
     stop_event = asyncio.Event()
 
+    async def msg(text, **kwargs):
+        sent_messages.append(text)
+        if len(sent_messages) >= 2:
+            stop_event.set()
+        return True
+
+    async def fake_chat_action(*args, **kwargs):
+        return True
+
     async def fake_responses(text, app_state):
-        assert text == "/analyze all tf=60"
         return [
             {
-                "text": "⚪ OANDA:XAUUSD — BUY\n\nBias: Bullish\nConfidence: 75%\n\nEntry: LIMIT 4030",
+                "text": "⚪ OANDA:XAUUSD — BUY\n\nSetup Type: BUY_LIMIT\nDay Trade: YES\nConfidence: 75%\nRisk Reward: 1:1.8\nEntry: LIMIT 4030\nStop Loss: 4020\nTake Profit:\nTP1: 4050\nTP2: 4070\nAI Reason: Valid.\nInvalidation: Below SL.\nRisk Reminder: ok",
                 "photo_path": None,
             },
             {
-                "text": "⚪ OANDA:EURUSD — WAIT\n\nBias: Neutral\nConfidence: 80%\n\nEntry: WAIT - no trade",
+                "text": "⚪ OANDA:EURUSD — WAIT\n\nSetup Type: WAIT\nDay Trade: NO\nEntry: WAIT - no trade\nStop Loss: N/A\nTake Profit:\nTP1: N/A\nTP2: N/A\nAI Reason: N/A\nInvalidation: N/A\nRisk Reminder: ok",
                 "photo_path": None,
             },
         ]
 
-    async def fake_send_message(text, **kwargs):
-        sent_messages.append(text)
-        stop_event.set()
-        return True
-
     original_values = {
         "auto_signal_enabled": settings.auto_signal_enabled,
         "auto_signal_interval_minutes": settings.auto_signal_interval_minutes,
-        "auto_signal_timeframe": settings.auto_signal_timeframe,
         "auto_signal_min_confidence": settings.auto_signal_min_confidence,
         "auto_signal_send_wait": settings.auto_signal_send_wait,
         "auto_signal_cooldown_minutes": settings.auto_signal_cooldown_minutes,
+        "auto_signal_min_rr": settings.auto_signal_min_rr,
+        "auto_signal_require_screenshot": settings.auto_signal_require_screenshot,
         "telegram_bot_token": settings.telegram_bot_token,
         "telegram_allowed_chat_id": settings.telegram_allowed_chat_id,
         "ai_api_key": settings.ai_api_key,
+        "admin_chat_id_prop": settings.telegram_admin_chat_id,
+        "channel_id": settings.telegram_channel_id,
     }
     try:
         settings.auto_signal_enabled = True
         settings.auto_signal_interval_minutes = 1
-        settings.auto_signal_timeframe = ""
         settings.auto_signal_min_confidence = 70
+        settings.auto_signal_min_rr = 1.5
         settings.auto_signal_send_wait = False
-        settings.auto_signal_cooldown_minutes = 60
+        settings.auto_signal_cooldown_minutes = 0
+        settings.auto_signal_require_screenshot = False
         settings.telegram_bot_token = "token"
         settings.telegram_allowed_chat_id = "123"
+        settings.telegram_admin_chat_id = ""
+        settings.telegram_channel_id = ""
         settings.ai_api_key = "key"
 
         monkeypatch.setattr("app.telegram_bot.bot.build_analysis_responses", fake_responses)
-        monkeypatch.setattr("app.telegram_bot.bot.send_message", fake_send_message)
+        monkeypatch.setattr("app.telegram_bot.bot.send_message", msg)
+        monkeypatch.setattr("app.telegram_bot.bot.send_chat_action", fake_chat_action)
 
         asyncio.run(run_auto_signal_loop(SimpleNamespace(auto_signal_last_sent={}), stop_event))
     finally:
         for key, value in original_values.items():
-            setattr(settings, key, value)
+            if key == "admin_chat_id_prop":
+                settings.telegram_admin_chat_id = value
+            elif key == "channel_id":
+                settings.telegram_channel_id = value
+            else:
+                setattr(settings, key, value)
 
-    assert len(sent_messages) == 1
-    assert "OANDA:XAUUSD" in sent_messages[0]
-    assert "OANDA:EURUSD" not in sent_messages[0]
+    assert any("OANDA:XAUUSD" in msg for msg in sent_messages)
+    assert any("OANDA:EURUSD" in msg for msg in sent_messages)
+    assert any("SCAN SUMMARY" in msg for msg in sent_messages)

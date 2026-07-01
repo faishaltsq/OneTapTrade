@@ -6,8 +6,8 @@ from typing import Any
 from app.config import settings
 from app.tradingview_mcp import run_tv_command
 
-HEADER_RE = re.compile(r"^\s*⚪\s+(?P<symbol>\S+)\s+[—-]\s+(?P<action>BUY|SELL|WAIT)\b", re.MULTILINE)
-LINE_RE = re.compile(r"^(?P<label>Entry|SL|TP1|TP2):\s*(?P<value>.+)$", re.IGNORECASE | re.MULTILINE)
+HEADER_RE = re.compile(r"^\s*⚪\s+(?P<symbol>\S+)\s+[\u2014\u2013\u2012\xad\u002d-—–]\s+(?P<action>BUY|SELL|WAIT)\b", re.MULTILINE)
+LINE_RE = re.compile(r"^(?P<label>[A-Z][^:]+):\s*(?P<value>.+)$", re.MULTILINE)
 NUMBER_RE = re.compile(r"(?<![\d.,])-?\d+(?:[.,]\d+)?")
 
 
@@ -40,7 +40,8 @@ def _numbers_from_text(text: str) -> list[float]:
 def _line_values(message: str) -> dict[str, str]:
     values: dict[str, str] = {}
     for match in LINE_RE.finditer(message or ""):
-        values[match.group("label").upper()] = match.group("value").strip()
+        key = match.group("label").strip().upper()
+        values[key] = match.group("value").strip()
     return values
 
 
@@ -76,54 +77,180 @@ def _timeframe_seconds(context: dict[str, Any] | None) -> int:
     return int(value * 60) if value else 3600
 
 
-def parse_prediction_levels(message: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
+def parse_signal(message: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
     header = HEADER_RE.search(message or "")
     if not header:
         return None
 
     action = header.group("action")
-    if action not in {"BUY", "SELL"}:
-        return None
-
     lines = _line_values(message)
-    entry_line = lines.get("ENTRY", "")
-    if entry_line.upper().startswith("WAIT"):
-        return None
+
+    setup_type = str(lines.get("SETUP TYPE") or "").upper()
+    day_trade = str(lines.get("DAY TRADE") or "").strip().upper()
+    bias = str(lines.get("BIAS") or "").strip()
+    confidence_raw = _float_value(lines.get("CONFIDENCE", ""))
+    rr_raw = lines.get("RISK REWARD", "N/A")
+    entry_line = str(lines.get("ENTRY") or "").strip()
+    sl_line = str(lines.get("STOP LOSS") or "").strip()
+    tp_line = str(lines.get("TAKE PROFIT") or "").strip()
+
+    confidence = int(confidence_raw) if confidence_raw is not None else None
+
+    rr_value: float | None = None
+    rr_numeric = rr_raw.replace("1:", "").strip()
+    rr_value = _float_value(rr_numeric)
+
+    sl_numbers = _numbers_from_text(sl_line)
+    sl = sl_numbers[0] if sl_numbers else None
+
+    tp1: float | None = None
+    tp2: float | None = None
+    standalone_tp1 = _float_value(lines.get("TP1", ""))
+    standalone_tp2 = _float_value(lines.get("TP2", ""))
+    if standalone_tp1 is not None:
+        tp1 = standalone_tp1
+    if standalone_tp2 is not None:
+        tp2 = standalone_tp2
+    if tp1 is None or tp2 is None:
+        tp_line = str(lines.get("TAKE PROFIT") or "").strip()
+        for tpl in tp_line.split("\n"):
+            tp_text = tpl.strip()
+            if "TP1:" in tp_text.upper() and tp1 is None:
+                tp1_nums = _numbers_from_text(tp_text.split("TP1:")[-1] if "TP1:" in tp_text.upper() else tp_text)
+                tp1 = tp1_nums[0] if tp1_nums else None
+            elif "TP2:" in tp_text.upper() and tp2 is None:
+                tp2_nums = _numbers_from_text(tp_text.split("TP2:")[-1] if "TP2:" in tp_text.upper() else tp_text)
+                tp2 = tp2_nums[0] if tp2_nums else None
+            elif tp1 is None:
+                tp1_nums = _numbers_from_text(tp_text)
+                tp1 = tp1_nums[0] if tp1_nums else None
 
     entry_numbers = _numbers_from_text(entry_line)
     current_price = _current_price_from_context(context)
-    if len(entry_numbers) >= 2 and ("-" in entry_line or "to" in entry_line.lower()):
-        entry = (entry_numbers[0] + entry_numbers[1]) / 2
-    elif entry_numbers:
-        entry = entry_numbers[0]
+    if entry_line.upper().startswith("WAIT"):
+        entry = None
+        entry_type = "WAIT"
+    elif "LIMIT" in entry_line.upper():
+        entry = sum(entry_numbers) / len(entry_numbers) if entry_numbers else None
+        entry_type = "LIMIT"
+    elif "STOP" in entry_line.upper():
+        entry = entry_numbers[0] if entry_numbers else None
+        entry_type = "STOP"
+    elif "MARKET" in entry_line.upper():
+        entry = entry_numbers[0] if entry_numbers else current_price
+        entry_type = "MARKET"
     else:
-        entry = current_price
+        entry = entry_numbers[0] if entry_numbers else current_price
+        entry_type = "MARKET"
 
-    sl_numbers = _numbers_from_text(lines.get("SL", ""))
-    tp1_numbers = _numbers_from_text(lines.get("TP1", ""))
-    tp2_numbers = _numbers_from_text(lines.get("TP2", ""))
-    sl = sl_numbers[0] if sl_numbers else None
-    tp1 = tp1_numbers[0] if tp1_numbers else None
-    tp2 = tp2_numbers[0] if tp2_numbers else None
-
-    if entry is None or sl is None or tp1 is None:
-        return None
-    target = tp2 if tp2 is not None else tp1
-
-    if action == "BUY" and not (sl < entry < target):
-        return None
-    if action == "SELL" and not (sl > entry > target):
-        return None
+    reason = str(lines.get("AI REASON") or "").strip()
+    invalidation = str(lines.get("INVALIDATION") or "").strip()
 
     return {
         "symbol": header.group("symbol"),
         "action": action,
+        "setup_type": setup_type or f"{action}_MARKET",
+        "day_trade": day_trade == "YES",
+        "bias": bias,
+        "confidence": confidence,
+        "risk_reward": rr_value,
+        "entry": entry,
+        "entry_type": entry_type,
+        "stop_loss": sl,
+        "tp1": tp1,
+        "tp2": tp2,
+        "reason": reason,
+        "invalidation": invalidation,
+    }
+
+
+def is_broadcastable(parsed: dict[str, Any]) -> bool:
+    if parsed.get("action") not in {"BUY", "SELL"}:
+        return False
+    setup = parsed.get("setup_type", "")
+    valid_setups = {"BUY_MARKET", "SELL_MARKET", "BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP"}
+    if setup not in valid_setups:
+        return False
+    if not parsed.get("day_trade"):
+        return False
+    confidence = parsed.get("confidence")
+    if confidence is None or confidence < settings.auto_signal_min_confidence:
+        return False
+    rr = parsed.get("risk_reward")
+    if rr is None or rr < settings.auto_signal_min_rr:
+        return False
+    if parsed.get("entry") is None:
+        return False
+    if parsed.get("stop_loss") is None:
+        return False
+    if parsed.get("tp1") is None:
+        return False
+    if not parsed.get("reason"):
+        return False
+    if not parsed.get("invalidation") or parsed.get("invalidation") in {"N/A", ""}:
+        return False
+    return True
+
+
+def channel_caption(parsed: dict[str, Any]) -> str:
+    tp1 = parsed.get("tp1")
+    tp2 = parsed.get("tp2")
+    tp_text = ""
+    if tp1 is not None:
+        tp_text += f"{tp1}"
+    if tp2 is not None:
+        tp_text += f"\nTP2: {tp2}" if tp_text else f"TP2: {tp2}"
+
+    entry = parsed.get("entry")
+    sl = parsed.get("stop_loss")
+    entry_str = f"{entry}" if entry is not None else "N/A"
+    sl_str = f"{sl}" if sl is not None else "N/A"
+
+    return (
+        f"AI DAY TRADE SETUP \u2014 {parsed.get('symbol', '-')}\n\n"
+        f"Setup Type:\n{parsed.get('setup_type', '-')}\n\n"
+        f"Entry:\n{entry_str}\n\n"
+        f"Stop Loss:\n{sl_str}\n\n"
+        f"Take Profit:\n"
+        f"TP1: {tp1 if tp1 is not None else 'N/A'}\n"
+        f"TP2: {tp2 if tp2 is not None else 'N/A'}\n\n"
+        f"Market Bias:\n{parsed.get('bias', '-')}\n\n"
+        f"Confidence:\n{parsed.get('confidence', '-')}%\n\n"
+        f"Risk Reward:\n1:{parsed.get('risk_reward', 'N/A')}\n\n"
+        f"AI Reason:\n{parsed.get('reason', '-')}\n\n"
+        f"Invalidation:\n{parsed.get('invalidation', '-')}\n\n"
+        f"Risk Reminder:\nGunakan lot sesuai manajemen risiko. Ini bukan financial advice."
+    )
+
+
+def parse_prediction_levels(message: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    parsed = parse_signal(message, context)
+    if parsed is None:
+        return None
+    if parsed["action"] not in {"BUY", "SELL"}:
+        return None
+    if parsed["entry"] is None or parsed["stop_loss"] is None or parsed["tp1"] is None:
+        return None
+    entry = parsed["entry"]
+    sl = parsed["stop_loss"]
+    tp1 = parsed["tp1"]
+    tp2 = parsed.get("tp2")
+    target = tp2 if tp2 is not None else tp1
+
+    if parsed["action"] == "BUY" and not (sl < entry < target):
+        return None
+    if parsed["action"] == "SELL" and not (sl > entry > target):
+        return None
+
+    return {
+        "symbol": parsed["symbol"],
+        "action": parsed["action"],
         "entry": entry,
         "sl": sl,
         "tp1": tp1,
         "tp2": tp2,
         "target": target,
-        "entry_type": "LIMIT" if "LIMIT" in entry_line.upper() else "MARKET",
+        "entry_type": parsed.get("entry_type", "MARKET"),
     }
 
 

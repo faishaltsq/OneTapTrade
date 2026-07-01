@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -7,36 +8,88 @@ from app.config import settings
 
 SIGNAL_FORMAT = """⚪ {PAIR} — {BUY / SELL / WAIT}
 
-Bias: {Bullish/Bearish/Neutral}
-Confidence: {0–100}%
+Setup Type:
+{BUY_MARKET / SELL_MARKET / BUY_LIMIT / SELL_LIMIT / BUY_STOP / SELL_STOP / WAIT / NO_SETUP}
 
-Entry: {WAIT / MARKET / LIMIT + harga / area entry}
-SL: {harga SL}
-TP1: {harga TP1}
-TP2: {harga TP2}
+Day Trade:
+{YES / NO}
 
-Reason:
-{Alasan singkat AI dalam 1–2 kalimat.}
+Bias:
+{Bullish / Bearish / Neutral}
 
-Invalid jika:
-{syarat setup batal}
+Confidence:
+{0-100}%
 
-Risk:
-Gunakan lot sesuai manajemen risiko."""
+Risk Reward:
+{1:x or N/A}
 
-DAYTRADE_PLAYBOOK = """FOREX DAY-TRADE METHOD:
-- Trade horizon: intraday only. Do not force swing-trade assumptions.
-- Bias filter: align signal with trend, market structure, and visible support/resistance. Prefer continuation after pullback or breakout-retest; allow reversal only after clear liquidity sweep and rejection.
-- Entry quality: BUY/SELL only when there is a defensible trigger around current price or a precise LIMIT area. If entry is late, chasing, inside chop, or far from invalidation, choose WAIT.
-- Liquidity and structure: identify recent swing highs/lows, breakout levels, failed breaks, support/resistance, supply/demand, and stop-loss liquidity when available from chart context.
-- Momentum/volatility: use OHLCV summary and indicator_values when present. Avoid trades when volatility is too compressed, candles are indecisive, or momentum conflicts with the bias.
-- EMA filter: use EMA 50/200 when available. Prefer BUY when price and EMA 50 are above EMA 200; prefer SELL when price and EMA 50 are below EMA 200. If EMA data conflicts with SMC structure, reduce confidence or choose WAIT.
-- SMC confluence: use Smart Money Concepts data when available: BOS, CHoCH, EQH/EQL, order-block/supply-demand boxes, and nearby horizontal levels. Do not buy directly into nearby bearish liquidity/resistance or sell directly into nearby bullish liquidity/support.
-- High-timeframe SNR: use only higher-timeframe support/resistance from daytrade_indicators.high_tf_snr for validation. Do not overvalue low-timeframe SNR. Avoid BUY directly below HTF resistance and avoid SELL directly above HTF support unless there is a clear breakout-retest or sweep/rejection setup.
-- Session awareness: prefer London, New York, or London-New York overlap behavior. If session/news context is unavailable, do not invent it; reduce confidence or choose WAIT.
-- Risk quality: for BUY/SELL, SL must sit beyond invalidation structure, not an arbitrary fixed distance. TP1 should target the nearest realistic level; TP2 should target the next structure/liquidity area.
-- Minimum quality gate: only output BUY/SELL when confidence is at least {min_confidence}% and expected reward:risk is at least 1:{min_rr}. Otherwise output WAIT.
-- Be selective. A high-quality WAIT is better than a weak BUY/SELL."""
+Entry:
+{market price / limit zone / stop trigger price / WAIT - no trade}
+
+Stop Loss:
+{numeric price or N/A}
+
+Take Profit:
+TP1: {numeric price or N/A}
+TP2: {numeric price or N/A}
+
+AI Reason:
+{1-2 concise Indonesian sentences}
+
+Invalidation:
+{clear invalidation rule or N/A}
+
+Risk Reminder:
+Gunakan lot sesuai manajemen risiko. Ini bukan financial advice."""
+
+DAYTRADE_PLAYBOOK = """AI DAY-TRADE SETUP SCANNER RULES:
+
+Your job: reject weak setups. Do not create signals where none exist.
+You are a setup scanner, not a prediction engine.
+
+TRADING STYLE: Day trade only.
+Use M15, M30, H1 for entry context. Use H1 and H4 for intraday bias. D1 only as broad context.
+
+ALLOWED SETUP_TYPES:
+BUY_MARKET — price at valid bullish trigger, not late, structure supports continuation.
+SELL_MARKET — price at valid bearish trigger, not late, structure supports continuation.
+BUY_LIMIT — bullish bias but price should retrace into demand/OB/support/discount/retest first.
+SELL_LIMIT — bearish bias but price should retrace into supply/OB/resistance/premium/retest first.
+BUY_STOP — bullish breakout setup. Entry above trigger. SL below failed breakout. Avoid fakeout ranges.
+SELL_STOP — bearish breakdown setup. Entry below trigger. SL above failed breakdown. Avoid fakeout ranges.
+WAIT — setup may form later but entry not ready. Entry: WAIT - no trade. SL/TP: N/A.
+NO_SETUP — unclear, choppy, risky, insufficient data. Entry: WAIT - no trade. SL/TP: N/A.
+
+ENTRY QUALITY:
+- MARKET: use ONLY if price is already in valid area. Never chase price.
+- LIMIT: place around demand/OB/support/discount (BUY) or supply/OB/resistance/premium (SELL). No random orders.
+- STOP: place beyond breakout/breakdown trigger. Stop loss beyond failed structure. Avoid high-noise ranges.
+
+DAY TRADE RULES:
+- TP1 must target nearest realistic intraday structure, liquidity, support, or resistance.
+- TP2 must target next intraday structure or liquidity area.
+- Do NOT use swing-trade or multi-day targets.
+- SL must sit beyond structural invalidation, not arbitrary distance.
+- Confidence >= {min_confidence}%. RR >= 1:{min_rr}. Otherwise NO_SETUP or WAIT.
+- If setup needs many days: NO_SETUP.
+- If price far from ideal entry: WAIT or LIMIT retest. Do NOT chase MARKET.
+- If breakout risky or likely fakeout: WAIT.
+
+WHAT TO AVOID:
+NO swing-trade assumptions. NO long holding periods. NO overnight targets.
+NO forced signals. NO chasing. NO weak breakouts.
+NO entries inside choppy range. NO setups with unclear invalidation.
+NO poor risk-reward. NO entry too close to opposite HTF S/R.
+NO fake precision when data insufficient.
+Do NOT buy directly into nearby bearish HTF resistance.
+Do NOT sell directly into nearby bullish HTF support.
+
+METHODS TO USE:
+EMA 50/200 for trend. SMC: BOS, CHoCH, OB, supply/demand, FVG, premium/discount.
+HTF SNR from H4/D only. Liquidity sweep/rejection context.
+OHLCV summary and indicator_values when present.
+
+Be selective. A good NO_SETUP or WAIT is better than a weak signal."""
 
 
 def _safe_value(value: Any, fallback: str = "-") -> str:
@@ -477,16 +530,13 @@ def build_chart_analysis_prompt(context: dict[str, Any], signal: dict[str, Any] 
             "daytrade_indicators": extract_daytrade_indicator_context(context, signal),
         },
     }
+    compact_context["chart_timestamp"] = datetime.now(timezone.utc).isoformat()
     return (
-        f"Analyze this TradingView chart context as a DeepSeek-powered {settings.ai_trading_style} signal-only assistant. "
-        "Return ONLY the exact plain-text template below. Do not add markdown, bullets, disclaimers, or extra sections. "
-        "Use BUY, SELL, or WAIT. Entry must explicitly choose WAIT, MARKET, or LIMIT. "
-        "For WAIT, write Entry: WAIT - no trade and SL/TP as N/A. "
-        "For BUY/SELL, choose MARKET only when price is already at a valid trigger; otherwise choose LIMIT with an entry area. "
-        "For BUY/SELL, always provide numeric SL, TP1, and TP2 based on visible support/resistance/structure. "
-        "Confidence must reflect setup quality, not certainty of profit. "
-        "Use Indonesian for Reason and Invalid jika. Reason must be 1-2 concise sentences. "
-        "If the setup is unclear or levels are not defensible, use WAIT.\n\n"
+        f"Analyze ONE TradingView pair as a DeepSeek day-trade setup scanner. "
+        "You are NOT a prediction engine. Your main job is to reject weak setups. "
+        "Return ONLY the exact plain-text template below. No markdown, no extra sections. "
+        "Use Indonesian for AI Reason and Invalidation. "
+        "Be selective and defensive. If unclear, return WAIT or NO_SETUP.\n\n"
         f"{DAYTRADE_PLAYBOOK.format(min_confidence=settings.ai_min_trade_confidence, min_rr=settings.ai_min_rr)}\n\n"
         f"TEMPLATE:\n{SIGNAL_FORMAT}\n\n"
         f"DATA:\n{json.dumps(compact_context, ensure_ascii=False, indent=2)}"
@@ -630,9 +680,12 @@ async def analyze_chart_context(context: dict[str, Any], signal: dict[str, Any] 
             {
                 "role": "system",
                 "content": (
-                    "You are a cautious DeepSeek forex day-trading chart analyst. "
-                    "Your job is to improve selectivity and signal quality, not to predict with certainty. "
-                    "You never execute trades. You must follow the requested output format exactly."
+                    "You are an AI day-trade setup scanner for OneTapTrade. "
+                    "Analyze one pair at a time. Decide if a valid day-trade setup exists. "
+                    "Be selective. Do not force signals. Do not make swing-trade setups. "
+                    "Do not invent data. If unclear, return WAIT or NO_SETUP. "
+                    "A good NO_SETUP is better than a weak BUY or SELL. "
+                    "You never execute trades. Follow the output format exactly."
                 ),
             },
             {"role": "user", "content": build_chart_analysis_prompt(context, signal)},

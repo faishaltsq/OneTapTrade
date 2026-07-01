@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     ai_base_url: str = "https://api.deepseek.com"
     ai_model: str = "deepseek-v4-pro"
     ai_analysis_on_signal: bool = False
-    ai_trading_style: str = "forex_daytrade"
+    ai_trading_style: str = "daytrade_scanner"
     ai_min_trade_confidence: int = 70
     ai_min_rr: float = 1.5
 
@@ -38,11 +38,17 @@ class Settings(BaseSettings):
     auto_signal_interval_minutes: int = 15
     auto_signal_timeframe: str = ""
     auto_signal_min_confidence: int = 70
+    auto_signal_min_rr: float = 1.5
     auto_signal_send_wait: bool = False
+    auto_signal_send_no_setup_summary: bool = True
+    auto_signal_require_screenshot: bool = True
     auto_signal_cooldown_minutes: int = 60
+    day_trade_only: bool = True
 
     telegram_bot_token: Optional[str] = None
     telegram_allowed_chat_id: Optional[str] = None
+    telegram_admin_chat_id: Optional[str] = None
+    telegram_channel_id: Optional[str] = None
     telegram_command_polling_enabled: bool = True
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
@@ -50,6 +56,14 @@ class Settings(BaseSettings):
     @property
     def telegram_enabled(self) -> bool:
         return bool(self.telegram_bot_token and self.telegram_allowed_chat_id)
+
+    @property
+    def admin_chat_id(self) -> str | None:
+        return self.telegram_admin_chat_id or self.telegram_allowed_chat_id
+
+    @property
+    def channel_enabled(self) -> bool:
+        return bool(self.telegram_channel_id and self.telegram_bot_token)
 
     @property
     def ai_enabled(self) -> bool:

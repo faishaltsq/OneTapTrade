@@ -25,15 +25,19 @@ def test_settings_defaults_are_signal_only():
     assert settings.prediction_drawing_bars_ahead == 24
     assert settings.ai_base_url == "https://api.deepseek.com"
     assert settings.ai_model == "deepseek-v4-pro"
-    assert settings.ai_trading_style == "forex_daytrade"
+    assert settings.ai_trading_style == "daytrade_scanner"
     assert settings.ai_min_trade_confidence == 70
     assert settings.ai_min_rr == 1.5
     assert settings.auto_signal_enabled is False
     assert settings.auto_signal_interval_minutes == 15
     assert settings.auto_signal_timeframe == ""
     assert settings.auto_signal_min_confidence == 70
+    assert settings.auto_signal_min_rr == 1.5
     assert settings.auto_signal_send_wait is False
+    assert settings.auto_signal_send_no_setup_summary is True
+    assert settings.auto_signal_require_screenshot is True
     assert settings.auto_signal_cooldown_minutes == 60
+    assert settings.day_trade_only is True
     assert settings.telegram_enabled is False
     assert settings.ai_enabled is False
 

@@ -183,11 +183,8 @@ def test_prompt_uses_deepseek_forex_daytrade_method():
         {"symbol": "OANDA:EURUSD", "action": "WAIT", "timeframe": "60"},
     )
 
-    assert "DeepSeek-powered forex_daytrade" in prompt
-    assert "FOREX DAY-TRADE METHOD" in prompt
+    assert "DeepSeek day-trade setup scanner" in prompt
+    assert "AI DAY-TRADE SETUP SCANNER RULES" in prompt
     assert "EMA 50/200" in prompt
-    assert "Smart Money Concepts" in prompt
-    assert "High-timeframe SNR" in prompt
-    assert "liquidity sweep" in prompt
-    assert "expected reward:risk is at least 1:1.5" in prompt
-    assert "confidence is at least 70%" in prompt
+    assert "RR >= 1:1.5" in prompt
+    assert "Confidence >= 70%" in prompt
