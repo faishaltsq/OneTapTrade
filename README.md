@@ -21,6 +21,10 @@ Project ini **bukan auto-trading executor**. Tidak ada eksekusi order, tidak ada
 - Analisa teknikal: EMA 50/200, SMC LuxAlgo, BOS/CHoCH/liquidity sweep/OB/supply-demand/FVG, HTF SNR (H4/D).
 - Prediction drawing di chart TradingView: risk/reward box, Entry/SL/TP1/TP2 line, label LONG/SHORT.
 - Automatic signal scanner background dengan confidence filter, RR filter, screenshot requirement, cooldown per symbol/action/setup_type.
+- Max broadcast per scan limit (`AUTO_SIGNAL_MAX_BROADCAST_PER_SCAN=3`) mencegah spam channel.
+- Format-repair retry: jika output AI tidak bisa diparse, retry sekali dengan prompt formatting tanpa re-analyze.
+- Telegram caption >1000 chars di-split: foto + short caption, full detail sebagai pesan terpisah.
+- Scan history logging ke `data/scan_history.json` (200 entries max).
 - 11 default pairs: forex majors, crypto COINBASE, USOIL, NAS100.
 - Fitur lama sudah dihapus: MT5, auto trade, execution, Supabase, risk manager, trading loop, DeepSeek executor lama.
 
