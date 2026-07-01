@@ -21,8 +21,10 @@ def test_menu_reply_markup_has_all_command_buttons():
     callback_data = [button["callback_data"] for row in markup["inline_keyboard"] for button in row]
 
     assert "cmd:scan" in callback_data
+    assert "cmd:today" in callback_data
     assert "cmd:status" in callback_data
     assert "cmd:last_signal" in callback_data
+    assert "cmd:history" in callback_data
     assert "cmd:help" in callback_data
 
 

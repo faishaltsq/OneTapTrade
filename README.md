@@ -235,10 +235,11 @@ Alias:
 /menu
 ```
 
-Semua command reply balik dengan inline keyboard:
+Semua command reply balik dengan inline keyboard (3 baris):
 
-- `Scan` dan `Status` di satu baris.
-- `Last Signal` dan `Help / Menu` di baris kedua.
+- `Scan Now` dan `Today Recap` di baris pertama.
+- `Status` dan `Last Signal` di baris kedua.
+- `History` dan `Help / Menu` di baris ketiga.
 
 Tombol `Scan` mengirim `sendChatAction` typing dan scanning message sebelum chart scan berjalan. Hasil valid di-broadcast ke channel Telegram, admin mendapat summary.
 

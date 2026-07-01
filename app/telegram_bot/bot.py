@@ -65,11 +65,15 @@ def menu_reply_markup() -> dict[str, Any]:
     return {
         "inline_keyboard": [
             [
-                {"text": "Scan", "callback_data": "cmd:scan"},
-                {"text": "Status", "callback_data": "cmd:status"},
+                {"text": "Scan Now", "callback_data": "cmd:scan"},
+                {"text": "Today Recap", "callback_data": "cmd:today"},
             ],
             [
+                {"text": "Status", "callback_data": "cmd:status"},
                 {"text": "Last Signal", "callback_data": "cmd:last_signal"},
+            ],
+            [
+                {"text": "History", "callback_data": "cmd:history"},
                 {"text": "Help / Menu", "callback_data": "cmd:help"},
             ],
         ]
@@ -205,7 +209,12 @@ def _format_signal(signal: dict[str, Any] | None) -> str:
 def _help_message() -> str:
     lines = ["<b>OneTapTrade Commands</b>"]
     lines.extend(f"/{cmd['command']} - {html.escape(cmd['description'])}" for cmd in BOT_COMMANDS)
-    lines.append("/menu - Show command list")
+    lines.extend([
+        "/analyze - Alias for /scan",
+        "/setups_today - Alias for /today",
+        "/recap_today - Alias for /today",
+        "/menu - Show menu buttons",
+    ])
     return "\n".join(lines)
 
 
