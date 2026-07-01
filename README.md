@@ -155,7 +155,8 @@ Catatan keamanan:
 
 Catatan DeepSeek AI:
 
-- `/analyze` memakai DeepSeek otomatis jika `AI_API_KEY` terisi.
+- `/scan` memakai DeepSeek otomatis jika `AI_API_KEY` atau env var `DEEPSEEK_API_KEY` terisi.
+- Gunakan `DEEPSEEK_API_KEY` env var supaya satu key dipakai bersama oleh OpenCode dan OneTapTrade. `AI_API_KEY` di `.env` tidak perlu diisi jika env var sudah ada.
 - Webhook TradingView memakai DeepSeek otomatis jika `AI_ANALYSIS_ON_SIGNAL=true`.
 - `AI_TRADING_STYLE=forex_daytrade` mengaktifkan prompt khusus forex day-trade.
 - `AI_MIN_TRADE_CONFIDENCE=70` dan `AI_MIN_RR=1.5` membuat AI lebih selektif: jika setup tidak memenuhi kualitas minimum, output harus `WAIT`.
