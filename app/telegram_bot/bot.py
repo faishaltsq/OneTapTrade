@@ -210,7 +210,6 @@ def _help_message() -> str:
     lines = ["<b>OneTapTrade Commands</b>"]
     lines.extend(f"/{cmd['command']} - {html.escape(cmd['description'])}" for cmd in BOT_COMMANDS)
     lines.extend([
-        "/analyze - Alias for /scan",
         "/setups_today - Alias for /today",
         "/recap_today - Alias for /today",
         "/menu - Show menu buttons",
