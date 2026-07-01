@@ -8,6 +8,9 @@ def test_settings_defaults_are_signal_only():
     assert settings.app_name == "OneTapTrade"
     assert settings.default_symbol == "XAUUSD"
     assert settings.symbols
+    assert "COINBASE:BTCUSD" in settings.symbols
+    assert "COINBASE:ETHUSD" in settings.symbols
+    assert "COINBASE:SOLUSD" in settings.symbols
     assert settings.tradingview_smc_study_filter == "Smart Money"
     assert settings.tradingview_ema_bar_count == 250
     assert settings.tradingview_snr_timeframes == "240,D"

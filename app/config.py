@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     app_name: str = "OneTapTrade"
 
     default_symbol: str = "XAUUSD"
-    default_symbols: str = "OANDA:XAUUSD"
+    default_symbols: str = "OANDA:XAUUSD,OANDA:EURUSD,OANDA:GBPUSD,OANDA:USDJPY,COINBASE:BTCUSD,COINBASE:ETHUSD,COINBASE:SOLUSD"
     default_timeframe: str = "60"
     tradingview_webhook_secret: Optional[str] = None
 
