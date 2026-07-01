@@ -17,6 +17,7 @@ BOT_COMMANDS = [
     {"command": "analyze", "description": "Alias for /scan"},
     {"command": "status", "description": "Show server and TradingView status"},
     {"command": "last_signal", "description": "Show latest TradingView signal"},
+    {"command": "history", "description": "Show last 5 scan summaries"},
     {"command": "help", "description": "Show command list"},
 ]
 
@@ -25,6 +26,7 @@ CALLBACK_COMMANDS = {
     "cmd:status": "/status",
     "cmd:last_signal": "/last_signal",
     "cmd:analyze": "/scan",
+    "cmd:history": "/history",
     "cmd:help": "/help",
 }
 
@@ -36,7 +38,7 @@ def _telegram_url(method: str) -> str:
 
 
 def _allowed_chat(chat_id: Any) -> bool:
-    return str(chat_id) == str(settings.telegram_allowed_chat_id)
+    return str(chat_id) in {str(settings.telegram_allowed_chat_id), str(settings.telegram_admin_chat_id or "")}
 
 
 async def set_bot_commands() -> bool:
@@ -499,6 +501,9 @@ async def send_scan_command_responses(text: str, app_state, admin_chat_id: str) 
     else:
         summary_lines.append("Result: Tidak ada setup day trade valid. Tidak ada broadcast ke channel.")
 
+    if broadcast_count == 0 and not settings.auto_signal_send_no_setup_summary:
+        return
+
     await send_message(
         _telegram_text("\n".join(summary_lines)),
         chat_id=admin_id,
@@ -598,6 +603,19 @@ async def handle_command_text(text: str, app_state) -> str:
         return await _status_message(app_state)
     if command == "/last_signal":
         return _format_signal(getattr(app_state, "latest_tradingview_signal", None))
+    if command == "/history":
+        path = _scan_history_path()
+        if not path.exists():
+            return "Belum ada scan history."
+        history = json.loads(path.read_text(encoding="utf-8"))[-5:]
+        lines = ["<b>Last 5 Scan History</b>", ""]
+        for entry in reversed(history):
+            ts = entry.get("timestamp", "?")[:16].replace("T", " ")
+            lines.append(
+                f"Time: {html.escape(ts)} | TF: {html.escape(str(entry.get('timeframe', '?')))} | "
+                f"Scanned: {entry.get('scanned_pairs', 0)} | Broadcast: {len(entry.get('broadcasted_setups', []))}"
+            )
+        return "\n".join(lines)
     if command in SCAN_COMMANDS:
         responses = await build_analysis_responses(text, app_state)
         return "\n\n".join(response["text"] or "" for response in responses)
