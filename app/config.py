@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     tradingview_cdp_port: int = 9222
     tradingview_smc_study_filter: str = "Smart Money"
     tradingview_ema_bar_count: int = 250
+    tradingview_snr_timeframes: str = "240,D"
+    tradingview_snr_bar_count: int = 200
     auto_launch_tradingview_on_startup: bool = True
     capture_chart_on_signal: bool = True
 
@@ -48,6 +50,10 @@ class Settings(BaseSettings):
     def symbols(self) -> list[str]:
         configured = [symbol.strip() for symbol in self.default_symbols.split(",") if symbol.strip()]
         return configured or [self.default_symbol]
+
+    @property
+    def snr_timeframes(self) -> list[str]:
+        return [timeframe.strip() for timeframe in self.tradingview_snr_timeframes.split(",") if timeframe.strip()]
 
 
 settings = Settings()

@@ -157,6 +157,19 @@ def _symbol_matches(current: str | None, target: str | None) -> bool:
     return current_upper == target_upper or current_upper.split(":")[-1] == target_upper.split(":")[-1]
 
 
+def _timeframe_matches(current: str | None, target: str | None) -> bool:
+    if not current or not target:
+        return False
+    current_text = str(current).upper()
+    target_text = str(target).upper()
+    aliases = {
+        "D": "1D",
+        "W": "1W",
+        "M": "1M",
+    }
+    return current_text == target_text or current_text == aliases.get(target_text)
+
+
 async def set_symbol_and_wait(symbol: str) -> dict[str, Any]:
     last_command: dict[str, Any] | None = None
     last_state: dict[str, Any] | None = None
@@ -192,7 +205,7 @@ async def set_timeframe_and_wait(timeframe: str) -> dict[str, Any]:
         await asyncio.sleep(1)
         for _ in range(6):
             last_state = await run_tv_command("state")
-            if last_state.get("success") and str(last_state.get("resolution")) == str(timeframe):
+            if last_state.get("success") and _timeframe_matches(last_state.get("resolution"), timeframe):
                 return {
                     "success": True,
                     "timeframe": timeframe,
@@ -208,6 +221,38 @@ async def set_timeframe_and_wait(timeframe: str) -> dict[str, Any]:
         "chart_ready": False,
         "command": last_command,
         "state": last_state,
+    }
+
+
+async def collect_high_timeframe_snr(current_timeframe: str | None = None) -> dict[str, Any]:
+    timeframes = settings.snr_timeframes
+    if not timeframes or settings.tradingview_snr_bar_count <= 0:
+        return {"success": True, "enabled": False, "timeframes": []}
+
+    collected: list[dict[str, Any]] = []
+    restore: dict[str, Any] | None = None
+    try:
+        for timeframe in timeframes:
+            update = await set_timeframe_and_wait(timeframe)
+            payload: dict[str, Any] = {
+                "timeframe": timeframe,
+                "success": bool(update.get("success")),
+                "update": update,
+            }
+            if update.get("success"):
+                payload["ohlcv"] = await run_tv_command("ohlcv", "--count", str(settings.tradingview_snr_bar_count))
+                payload["summary"] = await run_tv_command("ohlcv", "--summary")
+                payload["success"] = bool(payload["ohlcv"].get("success"))
+            collected.append(payload)
+    finally:
+        if current_timeframe:
+            restore = await set_timeframe_and_wait(current_timeframe)
+
+    return {
+        "success": any(item.get("success") for item in collected),
+        "enabled": True,
+        "timeframes": collected,
+        "restore_timeframe": restore,
     }
 
 
@@ -237,12 +282,13 @@ async def get_chart_context(
 
     status = await run_tv_command("status") if chart_updates else initial_status
 
+    state = await run_tv_command("state")
     context: dict[str, Any] = {
         "success": True,
         "initial_status": initial_status,
         "status": status,
         "chart_updates": chart_updates,
-        "state": await run_tv_command("state"),
+        "state": state,
         "quote": await run_tv_command("quote"),
         "ohlcv_summary": await run_tv_command("ohlcv", "--summary"),
     }
@@ -259,5 +305,9 @@ async def get_chart_context(
 
     if include_screenshot:
         context["screenshot"] = await run_tv_command("screenshot", "-r", "chart")
+
+    if include_indicators:
+        current_timeframe = str(state.get("resolution") or timeframe or status.get("chart_resolution") or "")
+        context["high_tf_snr"] = await collect_high_timeframe_snr(current_timeframe or None)
 
     return context

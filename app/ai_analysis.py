@@ -32,6 +32,7 @@ DAYTRADE_PLAYBOOK = """FOREX DAY-TRADE METHOD:
 - Momentum/volatility: use OHLCV summary and indicator_values when present. Avoid trades when volatility is too compressed, candles are indecisive, or momentum conflicts with the bias.
 - EMA filter: use EMA 50/200 when available. Prefer BUY when price and EMA 50 are above EMA 200; prefer SELL when price and EMA 50 are below EMA 200. If EMA data conflicts with SMC structure, reduce confidence or choose WAIT.
 - SMC confluence: use Smart Money Concepts data when available: BOS, CHoCH, EQH/EQL, order-block/supply-demand boxes, and nearby horizontal levels. Do not buy directly into nearby bearish liquidity/resistance or sell directly into nearby bullish liquidity/support.
+- High-timeframe SNR: use only higher-timeframe support/resistance from daytrade_indicators.high_tf_snr for validation. Do not overvalue low-timeframe SNR. Avoid BUY directly below HTF resistance and avoid SELL directly above HTF support unless there is a clear breakout-retest or sweep/rejection setup.
 - Session awareness: prefer London, New York, or London-New York overlap behavior. If session/news context is unavailable, do not invent it; reduce confidence or choose WAIT.
 - Risk quality: for BUY/SELL, SL must sit beyond invalidation structure, not an arbitrary fixed distance. TP1 should target the nearest realistic level; TP2 should target the next structure/liquidity area.
 - Minimum quality gate: only output BUY/SELL when confidence is at least {min_confidence}% and expected reward:risk is at least 1:{min_rr}. Otherwise output WAIT.
@@ -232,6 +233,164 @@ def _nearest_zones(zones: list[dict[str, Any]], current_price: float | None, lim
     )[:limit]
 
 
+def _bars_from_ohlcv(ohlcv_payload: Any) -> list[dict[str, float]]:
+    bars = ohlcv_payload.get("bars") if isinstance(ohlcv_payload, dict) else ohlcv_payload
+    if not isinstance(bars, list):
+        return []
+
+    parsed: list[dict[str, float]] = []
+    for bar in bars:
+        if not isinstance(bar, dict):
+            continue
+        high = _float_value(bar.get("high"))
+        low = _float_value(bar.get("low"))
+        close = _float_value(bar.get("close"))
+        if high is None or low is None or close is None:
+            continue
+        parsed.append({"high": high, "low": low, "close": close})
+    return parsed
+
+
+def _level_precision(price: float) -> int:
+    return _price_precision(price)
+
+
+def _round_level(price: float) -> float:
+    return round(price, _level_precision(price))
+
+
+def _snr_candidates_from_bars(bars: list[dict[str, float]], pivot_span: int = 2) -> list[dict[str, Any]]:
+    if len(bars) < pivot_span * 2 + 1:
+        return []
+
+    candidates: list[dict[str, Any]] = []
+    for index in range(pivot_span, len(bars) - pivot_span):
+        window = bars[index - pivot_span : index + pivot_span + 1]
+        high = bars[index]["high"]
+        low = bars[index]["low"]
+        if high >= max(bar["high"] for bar in window):
+            candidates.append({"type": "resistance", "price": high, "index": index, "source": "pivot_high"})
+        if low <= min(bar["low"] for bar in window):
+            candidates.append({"type": "support", "price": low, "index": index, "source": "pivot_low"})
+
+    recent_bars = bars[-min(50, len(bars)) :]
+    recent_high = max(recent_bars, key=lambda bar: bar["high"])
+    recent_low = min(recent_bars, key=lambda bar: bar["low"])
+    candidates.append({"type": "resistance", "price": recent_high["high"], "index": len(bars) - 1, "source": "recent_range_high"})
+    candidates.append({"type": "support", "price": recent_low["low"], "index": len(bars) - 1, "source": "recent_range_low"})
+    return candidates
+
+
+def _cluster_snr_levels(candidates: list[dict[str, Any]], tolerance: float, bar_count: int) -> list[dict[str, Any]]:
+    clusters: list[dict[str, Any]] = []
+    for candidate in sorted(candidates, key=lambda item: (item["type"], item["price"])):
+        matching_cluster = next(
+            (
+                cluster
+                for cluster in clusters
+                if cluster["type"] == candidate["type"] and abs(cluster["price"] - candidate["price"]) <= tolerance
+            ),
+            None,
+        )
+        if matching_cluster is None:
+            clusters.append(
+                {
+                    "type": candidate["type"],
+                    "price": float(candidate["price"]),
+                    "touches": 1,
+                    "last_index": int(candidate["index"]),
+                    "sources": [candidate["source"]],
+                }
+            )
+            continue
+
+        touches = matching_cluster["touches"] + 1
+        matching_cluster["price"] = ((matching_cluster["price"] * matching_cluster["touches"]) + candidate["price"]) / touches
+        matching_cluster["touches"] = touches
+        matching_cluster["last_index"] = max(matching_cluster["last_index"], int(candidate["index"]))
+        if candidate["source"] not in matching_cluster["sources"]:
+            matching_cluster["sources"].append(candidate["source"])
+
+    levels: list[dict[str, Any]] = []
+    for cluster in clusters:
+        recency = cluster["last_index"] / max(bar_count - 1, 1)
+        score = round(cluster["touches"] + recency, 2)
+        levels.append(
+            {
+                "type": cluster["type"],
+                "price": _round_level(cluster["price"]),
+                "touches": cluster["touches"],
+                "score": score,
+                "sources": cluster["sources"][:3],
+            }
+        )
+    return levels
+
+
+def _snr_timeframe_context(timeframe_payload: dict[str, Any], current_price: float | None) -> dict[str, Any]:
+    bars = _bars_from_ohlcv(timeframe_payload.get("ohlcv"))
+    if not bars:
+        return {
+            "timeframe": timeframe_payload.get("timeframe"),
+            "success": False,
+            "bar_count": 0,
+            "supports": [],
+            "resistances": [],
+        }
+
+    price_range = max(bar["high"] for bar in bars) - min(bar["low"] for bar in bars)
+    reference_price = current_price or bars[-1]["close"]
+    tolerance = max(price_range * 0.015, reference_price * 0.0002)
+    levels = _cluster_snr_levels(_snr_candidates_from_bars(bars), tolerance, len(bars))
+
+    supports = [level for level in levels if level["type"] == "support"]
+    resistances = [level for level in levels if level["type"] == "resistance"]
+    if current_price is not None:
+        supports = [level for level in supports if level["price"] <= current_price]
+        resistances = [level for level in resistances if level["price"] >= current_price]
+        supports = sorted(supports, key=lambda level: (abs(current_price - level["price"]), -level["score"]))[:4]
+        resistances = sorted(resistances, key=lambda level: (abs(level["price"] - current_price), -level["score"]))[:4]
+    else:
+        supports = sorted(supports, key=lambda level: level["score"], reverse=True)[:4]
+        resistances = sorted(resistances, key=lambda level: level["score"], reverse=True)[:4]
+
+    return {
+        "timeframe": timeframe_payload.get("timeframe"),
+        "success": True,
+        "bar_count": len(bars),
+        "tolerance": _round_level(tolerance),
+        "supports": supports,
+        "resistances": resistances,
+    }
+
+
+def _high_tf_snr_context(high_tf_snr: Any, current_price: float | None) -> dict[str, Any]:
+    timeframes = high_tf_snr.get("timeframes") if isinstance(high_tf_snr, dict) else []
+    if not isinstance(timeframes, list):
+        timeframes = []
+
+    contexts = [
+        _snr_timeframe_context(timeframe_payload, current_price)
+        for timeframe_payload in timeframes
+        if isinstance(timeframe_payload, dict)
+    ]
+    nearest_supports = [level | {"timeframe": ctx["timeframe"]} for ctx in contexts for level in ctx.get("supports", [])]
+    nearest_resistances = [level | {"timeframe": ctx["timeframe"]} for ctx in contexts for level in ctx.get("resistances", [])]
+    if current_price is not None:
+        nearest_supports = sorted(nearest_supports, key=lambda level: (abs(current_price - level["price"]), -level["score"]))[:5]
+        nearest_resistances = sorted(nearest_resistances, key=lambda level: (abs(level["price"] - current_price), -level["score"]))[:5]
+    else:
+        nearest_supports = sorted(nearest_supports, key=lambda level: level["score"], reverse=True)[:5]
+        nearest_resistances = sorted(nearest_resistances, key=lambda level: level["score"], reverse=True)[:5]
+
+    return {
+        "enabled": bool(isinstance(high_tf_snr, dict) and high_tf_snr.get("enabled")),
+        "timeframes": contexts,
+        "nearest_supports": nearest_supports,
+        "nearest_resistances": nearest_resistances,
+    }
+
+
 def extract_daytrade_indicator_context(context: dict[str, Any], signal: dict[str, Any] | None = None) -> dict[str, Any]:
     current_price = _current_price_from_context(context, signal)
     indicator_values = context.get("indicator_values")
@@ -261,6 +420,7 @@ def extract_daytrade_indicator_context(context: dict[str, Any], signal: dict[str
             "recent_labels": smc_labels[-12:],
             "nearest_zones": _nearest_zones(smc_zones, current_price),
         },
+        "high_tf_snr": _high_tf_snr_context(context.get("high_tf_snr"), current_price),
     }
 
 
@@ -288,6 +448,19 @@ def _fallback_indicator_reason(indicator_context: dict[str, Any]) -> str:
     if nearest_zones:
         zone = nearest_zones[0]
         parts.append(f"zona SMC terdekat {_format_price(zone.get('low'))}-{_format_price(zone.get('high'))}")
+
+    high_tf_snr = indicator_context.get("high_tf_snr") or {}
+    nearest_supports = high_tf_snr.get("nearest_supports") or []
+    nearest_resistances = high_tf_snr.get("nearest_resistances") or []
+    snr_parts: list[str] = []
+    if nearest_supports:
+        support = nearest_supports[0]
+        snr_parts.append(f"support {support.get('timeframe')} {_format_price(support.get('price'))}")
+    if nearest_resistances:
+        resistance = nearest_resistances[0]
+        snr_parts.append(f"resistance {resistance.get('timeframe')} {_format_price(resistance.get('price'))}")
+    if snr_parts:
+        parts.append(f"HTF SNR {'; '.join(snr_parts)}")
 
     return "; ".join(parts)
 
